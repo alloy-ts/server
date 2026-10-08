@@ -1,0 +1,7 @@
+name: server
+owner: alloy-ts
+description:
+repositories:
+  - https://codeberg.org/alloy-ts/server
+  - https://gitlab.com/alloy-ts/server
+  - https://github.com/alloy-ts/server
