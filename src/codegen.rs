@@ -72,6 +72,20 @@ impl Codegen {
     }
 }
 
+fn extract_param_name(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    if let Some(inner) = s.strip_prefix('<') {
+        if let Some(name) = inner.strip_suffix('>') {
+            return Some(name.trim_end_matches("..").to_string());
+        }
+    } else if let Some(name) = s.strip_prefix(':') {
+        return Some(name.to_string());
+    } else if !s.is_empty() {
+        return Some(s.to_string());
+    }
+    None
+}
+
 /// Helper function to parse a Rocket-style route pattern into parameters metadata.
 #[napi]
 pub fn parse_route_pattern(pattern: String) -> HashMap<String, Vec<String>> {
@@ -94,12 +108,15 @@ pub fn parse_route_pattern(pattern: String) -> HashMap<String, Vec<String>> {
 
     if parts.len() > 1 {
         for q in parts[1].split('&') {
-            if let Some(inner) = q.strip_prefix('<') {
-                if let Some(name) = inner.strip_suffix('>') {
-                    query_params.push(name.trim_end_matches("..").to_string());
+            if q.is_empty() {
+                continue;
+            }
+            if let Some((key, val)) = q.split_once('=') {
+                if let Some(param) = extract_param_name(val).or_else(|| extract_param_name(key)) {
+                    query_params.push(param);
                 }
-            } else if let Some(name) = q.strip_prefix(':') {
-                query_params.push(name.trim_end_matches("..").to_string());
+            } else if let Some(param) = extract_param_name(q) {
+                query_params.push(param);
             }
         }
     }
