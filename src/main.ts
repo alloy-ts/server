@@ -6,6 +6,29 @@ export function main(): string {
 
 export const Response = native.Response;
 export const file = native.file;
+
+function wrapHandler(handler: unknown): unknown {
+  if (typeof handler === "function") {
+    return (reqOrArgs: unknown) => {
+      const req = Array.isArray(reqOrArgs) ? reqOrArgs[0] : reqOrArgs;
+      return (handler as Function)(req);
+    };
+  }
+  if (
+    typeof handler === "object" &&
+    handler !== null &&
+    !(handler instanceof native.Response) &&
+    !("path" in handler)
+  ) {
+    const wrappedMap: Record<string, unknown> = {};
+    for (const [method, fn] of Object.entries(handler)) {
+      wrappedMap[method] = wrapHandler(fn);
+    }
+    return wrappedMap;
+  }
+  return handler;
+}
+
 export const serve = (options: {
   routes?: Record<string, unknown>;
   fetch?: (req: native.RequestInput) => unknown;
@@ -14,7 +37,18 @@ export const serve = (options: {
   unix?: string;
 }) => {
   const { routes, fetch, ...serveOptions } = options;
-  return native.serve(routes, fetch, serveOptions);
+
+  let wrappedRoutes: Record<string, unknown> | undefined;
+  if (routes) {
+    wrappedRoutes = {};
+    for (const [pattern, handler] of Object.entries(routes)) {
+      wrappedRoutes[pattern] = wrapHandler(handler);
+    }
+  }
+
+  const wrappedFetch = fetch ? wrapHandler(fetch) : undefined;
+
+  return native.serve(wrappedRoutes, wrappedFetch, serveOptions);
 };
 
 export function uri(
