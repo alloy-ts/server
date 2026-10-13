@@ -195,7 +195,7 @@ struct Pattern {
     ts_path: String,
     rocket_path: String,
     path_params: Vec<(String, bool)>,
-    query: Vec<String>,
+    query: Vec<(String, bool)>,
 }
 
 fn is_ident(name: &str) -> bool {
@@ -298,16 +298,33 @@ fn parse_pattern(pattern: &str) -> Pattern {
 
     let mut query = Vec::new();
     if let Some(query_part) = query_part {
+        rocket_path.push('?');
+        let mut first = true;
         for raw in query_part.split('&') {
             if raw.is_empty() {
                 continue;
             }
+            if !first {
+                rocket_path.push('&');
+            }
+            first = false;
+
+            let is_rocket_syntax = raw.starts_with('<') && raw.ends_with('>');
+            if is_rocket_syntax {
+                rocket_path.push_str(raw);
+            } else {
+                rocket_path.push('<');
+                rocket_path.push_str(raw);
+                rocket_path.push('>');
+            }
+
             let name = rocket_segment(raw).unwrap_or(raw);
+            let trailing = name.ends_with("..");
             let name = name.strip_suffix("..").unwrap_or(name);
             if name == "_" {
                 continue;
             }
-            query.push(sanitize_ident(name, query.len()));
+            query.push((sanitize_ident(name, query.len()), trailing));
         }
     }
 
@@ -432,7 +449,7 @@ pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
     let query = pattern
         .query
         .iter()
-        .map(|name| RouteParam {
+        .map(|(name, trailing)| RouteParam {
             name: name.clone(),
             ts_name: name.clone(),
             kind: ParamKind::Query,
@@ -440,7 +457,7 @@ pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| "string | number".to_string()),
-            trailing: false,
+            trailing: *trailing,
             optional: true,
         })
         .collect();
@@ -802,7 +819,7 @@ mod tests {
     fn parses_rocket_style_path_and_query() {
         let def = parse_route(input("POST", "/users/<id..>?<q>&closed")).unwrap();
         assert_eq!(def.path, "/users/:id");
-        assert_eq!(def.rocket_path, "/users/<id..>");
+        assert_eq!(def.rocket_path, "/users/<id..>?<q>&<closed>");
         assert_eq!(def.key, "POST /users/:id");
         assert!(def.params[0].trailing);
         assert_eq!(def.query.len(), 2);

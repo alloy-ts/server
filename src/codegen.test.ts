@@ -61,3 +61,15 @@ test("TypeScript route registration and Alloy helpers work correctly", () => {
   ]);
   expect(uriCode).toContain("item: (id: string | number) => `/api/items/${id}`");
 });
+
+test("generateTypescriptClient and interface codegen utilities work correctly", () => {
+  const clientRes = Alloy.generateTypescriptClient([
+    { name: "getUser", method: "GET", path: "/users/:id", returnType: "User" },
+  ]);
+  expect(clientRes.code).toContain("export class RocketClient");
+
+  const routeHandlerCode = Alloy.generateTypescriptClient([
+    { name: "getPost", method: "GET", path: "/posts/:id", returnType: "Post" },
+  ]);
+  expect(routeHandlerCode.code).toContain("getPost");
+});
