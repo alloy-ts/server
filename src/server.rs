@@ -430,7 +430,7 @@ pub fn serve(
         hostname: None,
         unix: None,
     });
-    let port = options.port.unwrap_or(3000) as u16;
+    let mut port = options.port.unwrap_or(3000) as u16;
     let hostname = options
         .hostname
         .clone()
@@ -441,6 +441,15 @@ pub fn serve(
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
+
+    if port == 0 {
+        if let Ok(listener) = std::net::TcpListener::bind((address, 0)) {
+            if let Ok(addr) = listener.local_addr() {
+                port = addr.port();
+            }
+        }
+    }
+
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
