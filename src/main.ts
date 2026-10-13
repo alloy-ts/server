@@ -30,12 +30,19 @@ export function uri(
 
 export const Rocket = native.Rocket;
 
+export const parseRouteAttribute = native.parseRouteAttribute;
+export const parseCatcherAttribute = native.parseCatcherAttribute;
+export const generateTsRouteManifest = native.generateTsRouteManifest;
+
 export const Alloy = {
   serve,
   file,
   Response,
   Rocket,
   uri,
+  parseRouteAttribute,
+  parseCatcherAttribute,
+  generateTsRouteManifest,
 };
 
 export default Alloy;
