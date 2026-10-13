@@ -46,7 +46,7 @@ use rocket::{Data, Shutdown};
 /// wrapped in. The JS function receives a [`RequestInput`] and must resolve a
 /// [`Promise<ResponsePayload>`] (i.e. be `async` and return a `Response`).
 type HandlerTsfn =
-    ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, RequestInput, Status, true, false, 0>;
+    ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, (RequestInput,), Status, true, false, 0>;
 
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
 /// Rocket's generated route handler would have extracted before calling the user
@@ -340,16 +340,16 @@ fn mount_value<'env>(
 ) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f: JsFunction = value.cast()?;
+            let f: JsFunction = unsafe { value.cast()? };
             let tsfn: HandlerTsfn =
-                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
-                    |ctx| Ok(ctx.value),
+                f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
+                    |ctx| Ok((ctx.value,)),
                 )?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
             let v = value.clone();
-            if let Ok(fr) = v.clone().cast::<StaticFile>() {
+            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
                 push_kind(
                     RouteKind::File {
                         path: fr.path,
@@ -359,11 +359,11 @@ fn mount_value<'env>(
                     methods,
                     out,
                 );
-            } else if let Ok(resp) = v.clone().cast::<ResponsePayload>() {
+            } else if let Ok(resp) = unsafe { v.clone().cast::<ResponsePayload>() } {
                 push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
             } else {
                 // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown<'env>> = v.cast()?;
+                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
                 for (method, method_value) in map {
                     let m: Method = method
                         .parse()
@@ -407,8 +407,8 @@ static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 /// config (`port`, `hostname`, `unix`).
 #[napi]
 pub async fn serve(
-    routes: Option<JsObject>,
-    fetch: Option<JsFunction>,
+    routes: Option<Unknown>,
+    fetch: Option<Unknown>,
     options: Option<ServeOptions>,
 ) -> napi::Result<Server> {
     let options = options.unwrap_or_else(|| ServeOptions {
@@ -431,7 +431,8 @@ pub async fn serve(
 
     let mut out: Vec<Route> = Vec::new();
     if let Some(table) = routes {
-        let names = table.get_property_names()?;
+        let table: JsObject = unsafe { table.cast()? };
+        let names: JsArray = unsafe { table.get_property_names()?.cast()? };
         let len = names.get_array_length()?;
         for i in 0..len {
             let pattern: String = names.get_element(i)?;
@@ -442,9 +443,10 @@ pub async fn serve(
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = fetch {
+        let f: JsFunction = unsafe { fetch.cast()? };
         let tsfn: HandlerTsfn =
-            fetch.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
-                |ctx| Ok(ctx.value),
+            f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
+                |ctx| Ok((ctx.value,)),
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
@@ -499,7 +501,7 @@ impl Server {
     pub fn stop(&self) -> napi::Result<()> {
         if let Some(slot) = SHUTDOWN.get() {
             if let Some(shutdown) = slot.lock().unwrap().take() {
-                shutdown.shutdown();
+                shutdown.notify();
             }
         }
         Ok(())
@@ -523,10 +525,11 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 /// `async` function returning a `Response`). Route definitions accumulate until
 /// [`launch`] is called, which builds and boots the Rocket instance.
 #[napi]
-pub fn register_route(method: String, path: String, handler: JsFunction) -> napi::Result<()> {
+pub fn register_route(method: String, path: String, handler: Unknown) -> napi::Result<()> {
+    let f: JsFunction = unsafe { handler.cast()? };
     let tsfn: HandlerTsfn =
-        handler.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
-            |ctx| Ok(ctx.value),
+        f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
+            |ctx| Ok((ctx.value,)),
         )?;
     let m: Method = method
         .parse()
