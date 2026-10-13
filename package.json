@@ -13,12 +13,12 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "node build.js && vp pack",
-    "build:napi": "node build.js",
-    "build:release": "node build.js --release",
+    "build": "napi build --platform --esm --output-dir ./dist && cp dist/*.node .",
+    "build:napi": "napi build --platform --esm --output-dir ./dist && cp dist/*.node .",
+    "build:release": "napi build --platform --esm --output-dir ./dist --release && cp dist/*.node .",
     "dev": "vp pack --watch",
     "start": "vp run src/main.ts",
-    "test": "vp test && node --test test.cjs",
+    "test": "vp test",
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
