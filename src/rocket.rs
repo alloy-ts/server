@@ -33,11 +33,11 @@ use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::catcher::{self, Catcher};
+use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 use rocket::http::{Method, Status as RocketStatus};
 use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
 use rocket::tokio::io::AsyncReadExt;
 use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
-use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 
 /// Convert any displayable Rocket error into an NAPI error.
 fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
@@ -107,16 +107,19 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
         None => None,
     };
 
-    let params: HashMap<String, String> = req
-        .route()
-        .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut params = HashMap::new();
+    if let Some(route) = req.route() {
+        for (i, segment) in route.uri.path().split('/').enumerate() {
+            if let Some(inner) = segment.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
+                let name = inner.strip_suffix("..").unwrap_or(inner);
+                if name != "_" {
+                    if let Some(Ok(value)) = req.param::<&str>(i) {
+                        params.insert(name.to_string(), value.to_string());
+                    }
+                }
+            }
+        }
+    }
 
     RequestPayload {
         method,
