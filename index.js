@@ -716,6 +716,11 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { add } = nativeBinding
-export { add }
+const { Response, Server, file, launch, registerRoute, serve } = nativeBinding
+export { Response }
+export { Server }
+export { file }
+export { launch }
+export { registerRoute }
+export { serve }
 export const __napiBindingTarget = __napiLoadedBindingTarget
