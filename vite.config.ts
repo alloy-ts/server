@@ -6,6 +6,7 @@ export default defineConfig({
     format: "esm",
     outDir: "dist",
     exports: true,
+    clean: false,
     dts: {
       generator: "tsgo",
     },

@@ -11,14 +11,14 @@
 //!
 //! | `rocket_codegen` (compile time)       | this module (runtime)                        |
 //! |---------------------------------------|---------------------------------------------|
-//! | `#[get("/<id>")]` parses a route URI  | [`parse_route`] parses a route pattern      |
+//! | `#[get("/<id>")]` parses a route URI  | [`parse_route`] / [`parse_rocket_route_pattern`] |
 //! | `routes!` collects route metadata     | [`parse_routes`] builds `Vec<`[`RouteDef]`>`|
 //! | type-checked `uri!(route(a, b))` URIs | the generated `uri()` builder                |
-//! | `FromForm` / `Responder` derives      | generated `ParamsOf` / `QueryOf` / … aliases|
+//! | `FromForm` / `Responder` derives      | [`generate_typescript_interface`] / aliases|
 //!
-//! [`generate_types`], [`generate_client`], and [`generate_module`] return
-//! **TypeScript source code** as a string, so a Node.js caller can write a
-//! fully typed API surface straight from the route table it already passes to
+//! [`generate_types`], [`generate_client`], [`generate_module`], and [`generate_typescript_client`]
+//! return **TypeScript source code** as a string, so a Node.js caller can write
+//! a fully typed API surface straight from the route table it passes to
 //! [`crate::server::serve`]:
 //!
 //! ```ts
@@ -40,23 +40,17 @@
 //! `queryTypes`, `ts_name` is `tsName`, `ts_type` is `tsType`, `base_url` is
 //! `baseUrl`, `client_name` is `clientName`, `types_name` is `typesName`,
 //! `server_import` is `serverImport`, and `types_import` is `typesImport`.
-//! Unknown keys are *ignored* rather than rejected, so a mistyped option
-//! silently falls back to its default.
 //!
 //! # Pattern syntax
 //!
 //! Both the Alloy/Bun syntax used by [`crate::server::serve`] and Rocket's own
-//! route syntax are accepted, so the same string can be handed to `serve()` and
-//! to this module:
+//! route syntax are accepted:
 //!
 //! | pattern          | meaning                             |
 //! |------------------|-------------------------------------|
 //! | `:name` / `<name>`   | a single dynamic path segment    |
 //! | `*` / `<name..>` / `<_..>` | trailing, multi-segment match |
 //! | `?a&b` / `?<a>&<b>`  | query parameters                 |
-//!
-//! Unknown method names are rejected up front (mirroring Rocket's route
-//! attribute, which only accepts the HTTP methods Rocket knows).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -76,7 +70,7 @@ pub const ALL_METHODS: &[&str] = &[
 
 /// Where a dynamic route parameter comes from.
 #[napi(string_enum)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParamKind {
     /// A dynamic path segment (`:id`, `<id>`).
     Path,
@@ -84,6 +78,17 @@ pub enum ParamKind {
     Query,
     /// The request body.
     Body,
+}
+
+/// Dynamic parameter extracted by [`parse_rocket_route_pattern`].
+#[napi(object)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedRocketParam {
+    pub name: String,
+    pub param_type: String,
+    pub is_path: bool,
+    pub is_query: bool,
+    pub is_optional: bool,
 }
 
 /// One dynamic parameter of a [`RouteDef`].
@@ -177,6 +182,35 @@ pub struct CodegenOptions {
     pub banner: Option<bool>,
 }
 
+/// Input parameter for [`generate_typescript_client`].
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct RouteSpecInput {
+    pub method: String,
+    pub path: String,
+    pub name: Option<String>,
+    pub params: Option<Vec<ParsedRocketParam>>,
+    pub return_type: Option<String>,
+    pub body_type: Option<String>,
+}
+
+/// Output object for [`generate_typescript_client`].
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct ClientGenerationResult {
+    pub code: String,
+}
+
+/// Field definition for [`generate_typescript_interface`].
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct FieldDef {
+    pub name: String,
+    pub ts_type: String,
+    pub optional: Option<bool>,
+    pub description: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
@@ -195,7 +229,7 @@ struct Pattern {
     ts_path: String,
     rocket_path: String,
     path_params: Vec<(String, bool)>,
-    query: Vec<String>,
+    query: Vec<(String, bool)>,
 }
 
 fn is_ident(name: &str) -> bool {
@@ -268,17 +302,19 @@ fn parse_pattern(pattern: &str) -> Pattern {
                 Some(name) => (name, true),
                 None => (inner, false),
             };
-            if name == "_" {
+            if trailing || name == "_" {
                 ts_path.push('*');
-                rocket_path.push_str("<_..>");
-                path_params.push(("_".to_string(), true));
+                rocket_path.push('<');
+                rocket_path.push_str(name);
+                rocket_path.push_str("..>");
+                path_params.push((name.to_string(), true));
             } else if is_ident(name) {
                 rocket_path.push('<');
                 rocket_path.push_str(name);
-                rocket_path.push_str(if trailing { "..>" } else { ">" });
+                rocket_path.push('>');
                 ts_path.push(':');
                 ts_path.push_str(name);
-                path_params.push((name.to_string(), trailing));
+                path_params.push((name.to_string(), false));
             } else {
                 ts_path.push_str(segment);
                 rocket_path.push_str(segment);
@@ -302,12 +338,14 @@ fn parse_pattern(pattern: &str) -> Pattern {
             if raw.is_empty() {
                 continue;
             }
+            let is_trailing = raw.contains("..");
             let name = rocket_segment(raw).unwrap_or(raw);
             let name = name.strip_suffix("..").unwrap_or(name);
             if name == "_" {
                 continue;
             }
-            query.push(sanitize_ident(name, query.len()));
+            let sanitized = sanitize_ident(name, query.len());
+            query.push((sanitized, is_trailing));
         }
     }
 
@@ -330,8 +368,7 @@ fn override_map(overrides: &Option<Vec<TypeOverride>>) -> HashMap<String, String
         .unwrap_or_default()
 }
 
-/// Derive a handler name from a method and path: `GET /users/:id` ->
-/// `getUserById`.
+/// Derive a handler name from a method and path: `GET /users/:id` -> `getUserById`.
 fn derive_method_name(method: &str, ts_path: &str) -> String {
     let mut out = method.to_ascii_lowercase();
     let mut capitalize = true;
@@ -386,6 +423,35 @@ pub fn http_methods() -> Vec<String> {
     ALL_METHODS.iter().map(|m| m.to_string()).collect()
 }
 
+/// Extract dynamic path/query parameters from Rocket or Alloy route strings.
+#[napi]
+pub fn parse_rocket_route_pattern(pattern: String) -> Vec<ParsedRocketParam> {
+    let parsed = parse_pattern(&pattern);
+    let mut results = Vec::new();
+
+    for (name, trailing) in parsed.path_params {
+        results.push(ParsedRocketParam {
+            name,
+            param_type: "string".to_string(),
+            is_path: true,
+            is_query: false,
+            is_optional: trailing,
+        });
+    }
+
+    for (name, trailing) in parsed.query {
+        results.push(ParsedRocketParam {
+            name,
+            param_type: "string".to_string(),
+            is_path: false,
+            is_query: true,
+            is_optional: trailing,
+        });
+    }
+
+    results
+}
+
 /// Resolve one route pattern into a [`RouteDef`].
 #[napi]
 pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
@@ -413,7 +479,6 @@ pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
             name: name.clone(),
             ts_name: sanitize_ident(name, index),
             kind: ParamKind::Path,
-            // A multi-segment param (`*`, `<name..>`) is filled from an array.
             ts_type: param_types
                 .get(name)
                 .cloned()
@@ -432,7 +497,7 @@ pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
     let query = pattern
         .query
         .iter()
-        .map(|name| RouteParam {
+        .map(|(name, trailing)| RouteParam {
             name: name.clone(),
             ts_name: name.clone(),
             kind: ParamKind::Query,
@@ -440,7 +505,7 @@ pub fn parse_route(input: RouteInput) -> napi::Result<RouteDef> {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| "string | number".to_string()),
-            trailing: false,
+            trailing: *trailing,
             optional: true,
         })
         .collect();
@@ -474,11 +539,16 @@ pub fn parse_routes(inputs: Vec<RouteInput>) -> napi::Result<Vec<RouteDef>> {
     Ok(defs)
 }
 
-/// Translate an Alloy/Bun or Rocket pattern into Rocket's `<param>` syntax —
-/// the same translation [`crate::server::serve`] applies before mounting.
+/// Translate an Alloy/Bun or Rocket pattern into Rocket's `<param>` syntax.
 #[napi]
 pub fn to_rocket_path(pattern: String) -> String {
     parse_pattern(&pattern).rocket_path
+}
+
+/// Translate Rocket route syntax (`/users/<id>`) into Alloy/Bun syntax (`/users/:id`).
+#[napi]
+pub fn translate_pattern_to_alloy(pattern: String) -> String {
+    parse_pattern(&pattern).ts_path
 }
 
 // ---------------------------------------------------------------------------
@@ -579,8 +649,6 @@ fn push_members(out: &mut String, params: &[RouteParam], indent: &str) {
     out.push('}');
 }
 
-/// The route map interface plus the `ParamsOf` / `QueryOf` / … aliases and the
-/// handler signatures that consume them.
 fn push_route_types(out: &mut String, defs: &[RouteDef], options: &CodegenOptions) {
     let types_name = options
         .types_name
@@ -610,8 +678,6 @@ fn push_route_types(out: &mut String, defs: &[RouteDef], options: &CodegenOption
     out.push('\n');
 
     let _ = writeln!(out, "/** Context handed to a generated route handler; mirrors `RequestInput`. */");
-    // `RequestInput.query` is the raw query *string*; the generated `query` is
-    // the parsed object, so it must be omitted rather than overridden.
     let _ = writeln!(out, "export interface RouteContext<K extends RouteKey> extends Omit<RequestLike, \"query\"> {{");
     let _ = writeln!(out, "  params: ParamsOf<K>;");
     let _ = writeln!(out, "  query: QueryOf<K>;");
@@ -700,9 +766,7 @@ fn push_client(out: &mut String, defs: &[RouteDef], options: &CodegenOptions) {
     out.push_str("}\n");
 }
 
-/// Emit a `.d.ts`-style route map: params, query, body, and response types per
-/// route, plus the `ParamsOf` / `QueryOf` / `BodyOf` / `ResponseOf` aliases and
-/// the handler signature they feed.
+/// Emit a `.d.ts`-style route map.
 #[napi]
 pub fn generate_types(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> String {
     let options = options.unwrap_or_default();
@@ -716,8 +780,7 @@ pub fn generate_types(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> S
     out
 }
 
-/// Emit a typed `fetch` client: one method per route, with the `uri()` builder
-/// (the runtime counterpart of Rocket's `uri!`) alongside it.
+/// Emit a typed `fetch` client.
 #[napi]
 pub fn generate_client(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> String {
     let options = options.unwrap_or_default();
@@ -735,7 +798,6 @@ pub fn generate_client(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> 
             out.push('\n');
         }
         None => {
-            // Inline the types so the output stands on its own.
             push_request_like(&mut out, &options);
             push_route_types(&mut out, &defs, &options);
         }
@@ -746,8 +808,7 @@ pub fn generate_client(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> 
     out
 }
 
-/// Emit a complete module: the `ROUTES` table, the route map types, the `uri()`
-/// builder, and the typed client.
+/// Emit a complete module.
 #[napi]
 pub fn generate_module(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> String {
     let options = options.unwrap_or_default();
@@ -762,6 +823,72 @@ pub fn generate_module(defs: Vec<RouteDef>, options: Option<CodegenOptions>) -> 
     out.push_str(URI_HELPER);
     out.push('\n');
     push_client(&mut out, &defs, &options);
+    out
+}
+
+/// Generate a strongly-typed fetch client SDK for route specifications.
+#[napi]
+pub fn generate_typescript_client(
+    routes: Vec<RouteSpecInput>,
+    options: Option<CodegenOptions>,
+) -> ClientGenerationResult {
+    let options = options.unwrap_or_default();
+    let route_inputs: Vec<RouteInput> = routes
+        .into_iter()
+        .map(|r| RouteInput {
+            method: r.method,
+            path: r.path,
+            name: r.name,
+            body: r.body_type,
+            response: r.return_type,
+            param_types: None,
+            query_types: None,
+        })
+        .collect();
+
+    let defs = parse_routes(route_inputs).unwrap_or_default();
+    let code = generate_client(defs, Some(options));
+    ClientGenerationResult { code }
+}
+
+/// Generate TypeScript route handler boilerplate for a route.
+#[napi]
+pub fn generate_route_handler(
+    input: RouteInput,
+    options: Option<CodegenOptions>,
+) -> String {
+    let def = match parse_route(input) {
+        Ok(d) => d,
+        Err(_) => return String::new(),
+    };
+    let options = options.unwrap_or_default();
+    let mut out = String::new();
+    push_banner(&mut out, &options);
+    let handler_name = format!("{}Handler", def.name);
+    let _ = writeln!(
+        out,
+        "export const {handler_name}: RouteHandler<\"{}\"> = async (ctx) => {{",
+        def.key
+    );
+    let _ = writeln!(out, "  // TODO: implement {} handler for {}", def.method, def.path);
+    let _ = writeln!(out, "  return new Response(\"OK\");");
+    let _ = writeln!(out, "}};");
+    out
+}
+
+/// Convert field definitions into a TypeScript interface string.
+#[napi]
+pub fn generate_typescript_interface(name: String, fields: Vec<FieldDef>) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "export interface {name} {{");
+    for f in fields {
+        if let Some(desc) = &f.description {
+            let _ = writeln!(out, "  /** {desc} */");
+        }
+        let opt = if f.optional.unwrap_or(false) { "?" } else { "" };
+        let _ = writeln!(out, "  {}{opt}: {};", f.name, f.ts_type);
+    }
+    let _ = writeln!(out, "}}");
     out
 }
 
@@ -801,9 +928,9 @@ mod tests {
     #[test]
     fn parses_rocket_style_path_and_query() {
         let def = parse_route(input("POST", "/users/<id..>?<q>&closed")).unwrap();
-        assert_eq!(def.path, "/users/:id");
+        assert_eq!(def.path, "/users/*");
         assert_eq!(def.rocket_path, "/users/<id..>");
-        assert_eq!(def.key, "POST /users/:id");
+        assert_eq!(def.key, "POST /users/*");
         assert!(def.params[0].trailing);
         assert_eq!(def.query.len(), 2);
         assert_eq!(def.query[0].name, "q");
@@ -835,14 +962,11 @@ mod tests {
             ts_type: "\"a\" | \"b\"".to_string(),
         }]);
         let def = parse_route(route).unwrap();
-        // `type` is reserved in TypeScript, so it is emitted as `type_`.
         assert_eq!(def.params[0].ts_name, "type_");
         assert_eq!(def.params[0].ts_type, "\"a\" | \"b\"");
-        // A query name that is not a valid identifier is sanitized, not dropped.
         assert_eq!(def.query[0].ts_name, "param0_2fa");
         assert_eq!(def.query[0].name, "param0_2fa");
 
-        // A path segment that cannot be a parameter stays literal.
         let def = parse_route(input("GET", "/items/:2fa")).unwrap();
         assert!(def.params.is_empty());
         assert_eq!(def.path, "/items/:2fa");
@@ -850,7 +974,6 @@ mod tests {
 
     #[test]
     fn dedupes_route_names() {
-        // The same pattern registered twice collapses to one generated name.
         let defs = parse_routes(vec![input("GET", "/a/:id"), input("GET", "/a/:id")]).unwrap();
         assert_eq!(defs[0].name, "getAById");
         assert_eq!(defs[1].name, "getAById_2");
@@ -861,6 +984,55 @@ mod tests {
         assert_eq!(to_rocket_path("/a/:b/*".to_string()), "/a/<b>/<_..>");
         assert_eq!(to_rocket_path("/a/<b..>".to_string()), "/a/<b..>");
         assert_eq!(to_rocket_path("/a/<_>".to_string()), "/a/<_..>");
+        assert_eq!(translate_pattern_to_alloy("/users/<id>/<rest..>".to_string()), "/users/:id/*");
+    }
+
+    #[test]
+    fn parses_rocket_route_pattern_helper() {
+        let params = parse_rocket_route_pattern("/users/<id>?<age>&<name..>".to_string());
+        assert_eq!(params.len(), 3);
+        assert_eq!(params[0].name, "id");
+        assert!(params[0].is_path);
+        assert!(!params[0].is_query);
+        assert!(!params[0].is_optional);
+
+        assert_eq!(params[1].name, "age");
+        assert!(!params[1].is_path);
+        assert!(params[1].is_query);
+        assert!(!params[1].is_optional);
+
+        assert_eq!(params[2].name, "name");
+        assert!(!params[2].is_path);
+        assert!(params[2].is_query);
+        assert!(params[2].is_optional);
+    }
+
+    #[test]
+    fn generates_typescript_interface_and_route_handler() {
+        let iface = generate_typescript_interface(
+            "User".to_string(),
+            vec![
+                FieldDef {
+                    name: "id".to_string(),
+                    ts_type: "string".to_string(),
+                    optional: Some(false),
+                    description: Some("User ID".to_string()),
+                },
+                FieldDef {
+                    name: "age".to_string(),
+                    ts_type: "number".to_string(),
+                    optional: Some(true),
+                    description: None,
+                },
+            ],
+        );
+        assert!(iface.contains("export interface User {"));
+        assert!(iface.contains("/** User ID */"));
+        assert!(iface.contains("id: string;"));
+        assert!(iface.contains("age?: number;"));
+
+        let handler = generate_route_handler(input("GET", "/users/:id"), None);
+        assert!(handler.contains("export const getUsersByIdHandler: RouteHandler<\"GET /users/:id\"> = async (ctx) => {"));
     }
 
     #[test]
@@ -880,7 +1052,6 @@ mod tests {
         assert!(ts.contains("async getUsersById("));
         assert!(ts.contains("as ResponseOf<\"GET /users/:id\">;"));
 
-        // `generate_types` emits declarations only: no values, no client.
         let types = generate_types(vec![def.clone()], None);
         assert!(types.contains("export interface RouteTypes {"));
         assert!(types.contains("export type ParamsOf<K extends RouteKey> = RouteTypes[K][\"params\"];"));
@@ -908,5 +1079,22 @@ mod tests {
         assert!(client.contains("import type { ParamsOf, QueryOf, BodyOf, ResponseOf } from \"./api-types\";"));
         assert!(client.contains("export class Api {"));
         assert!(client.contains("http://localhost:3000"));
+
+        let client_res = generate_typescript_client(
+            vec![RouteSpecInput {
+                method: "GET".to_string(),
+                path: "/users/<id>".to_string(),
+                name: Some("getUser".to_string()),
+                params: None,
+                return_type: Some("Promise<{ id: string; name: string }>".to_string()),
+                body_type: None,
+            }],
+            Some(CodegenOptions {
+                client_name: Some("UserApiClient".to_string()),
+                ..Default::default()
+            }),
+        );
+        assert!(client_res.code.contains("export class UserApiClient {"));
+        assert!(client_res.code.contains("async getUser("));
     }
 }
