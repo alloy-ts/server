@@ -18,6 +18,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "percent-encoding",
  "rocket",
  "serde_json",
 ]
