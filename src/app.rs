@@ -76,6 +76,35 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
+fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
+    let p_segs: Vec<&str> = pattern
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let a_segs: Vec<&str> = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut params = HashMap::new();
+    for (idx, seg) in p_segs.iter().enumerate() {
+        if let Some(inner) = seg.strip_prefix('<') {
+            let name = inner
+                .strip_suffix("..>")
+                .or_else(|| inner.strip_suffix('>'));
+            if let Some(name) = name {
+                if name != "_" {
+                    if let Some(v) = a_segs.get(idx) {
+                        params.insert(name.to_string(), (*v).to_string());
+                    }
+                }
+            }
+        }
+    }
+    params
+}
+
 /// Build a `RequestPayload` from a Rocket request. The body is read fully when
 /// `data` is supplied; catchers receive `None` and produce no body.
 pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
@@ -109,13 +138,7 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
 
     let params: HashMap<String, String> = req
         .route()
-        .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
-        })
+        .map(|route| extract_params(&route.uri.to_string(), &path))
         .unwrap_or_default();
 
     RequestPayload {
