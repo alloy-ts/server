@@ -77,7 +77,8 @@ pub struct ResponsePayload {
 }
 
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
-    let p_segs: Vec<&str> = pattern
+    let pattern_path = pattern.split_once('?').map_or(pattern, |(p, _)| p);
+    let p_segs: Vec<&str> = pattern_path
         .trim_start_matches('/')
         .split('/')
         .filter(|s| !s.is_empty())
@@ -90,12 +91,17 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
+            let is_trailing = inner.ends_with("..>");
             let name = inner
                 .strip_suffix("..>")
                 .or_else(|| inner.strip_suffix('>'));
             if let Some(name) = name {
                 if name != "_" {
-                    if let Some(v) = a_segs.get(idx) {
+                    if is_trailing {
+                        if idx < a_segs.len() {
+                            params.insert(name.to_string(), a_segs[idx..].join("/"));
+                        }
+                    } else if let Some(v) = a_segs.get(idx) {
                         params.insert(name.to_string(), (*v).to_string());
                     }
                 }
