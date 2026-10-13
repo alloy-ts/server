@@ -107,6 +107,17 @@ export class Response {
   }
 }
 
+export const response = (
+  body?: any,
+  init?: {
+    status?: number;
+    headers?: [string, string][] | Record<string, string> | HeaderInput[] | null;
+  },
+) => new Response(body, init);
+
+export const responseJson = (data: any, init?: any) => Response.json(data, init);
+export const responseRedirect = (url: string, status?: number) => Response.redirect(url, status);
+
 // ---------------------------------------------------------------------------
 // Native exports & Server ergonomics
 // ---------------------------------------------------------------------------
@@ -165,6 +176,64 @@ export const registerRoute = (method: string, path: string, handler: any) => {
 
 export const Config = native.Config;
 export const Server = native.Server;
+
+// ---------------------------------------------------------------------------
+// App Builder Abstraction
+// ---------------------------------------------------------------------------
+
+export class App {
+  private routes: Record<string, any> = {};
+
+  private addRoute(method: string, path: string, handler: any) {
+    const existing = this.routes[path];
+    if (!existing) {
+      this.routes[path] = { [method]: handler };
+    } else if (typeof existing === "object" && !Array.isArray(existing)) {
+      existing[method] = handler;
+    } else {
+      this.routes[path] = { GET: existing, [method]: handler };
+    }
+  }
+
+  get(path: string, handler: any) {
+    this.addRoute("GET", path, handler);
+    return this;
+  }
+
+  post(path: string, handler: any) {
+    this.addRoute("POST", path, handler);
+    return this;
+  }
+
+  put(path: string, handler: any) {
+    this.addRoute("PUT", path, handler);
+    return this;
+  }
+
+  delete(path: string, handler: any) {
+    this.addRoute("DELETE", path, handler);
+    return this;
+  }
+
+  patch(path: string, handler: any) {
+    this.addRoute("PATCH", path, handler);
+    return this;
+  }
+
+  head(path: string, handler: any) {
+    this.addRoute("HEAD", path, handler);
+    return this;
+  }
+
+  options(path: string, handler: any) {
+    this.addRoute("OPTIONS", path, handler);
+    return this;
+  }
+
+  launch(options?: any) {
+    return serve(this.routes, undefined, options);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Route Registry & Decorators
@@ -412,6 +481,7 @@ export const Alloy = {
   Response,
   Config,
   Server,
+  App,
   Route,
   Get,
   Post,
