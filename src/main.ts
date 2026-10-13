@@ -1,16 +1,6 @@
-import {
-  Config,
-  file,
-  launch,
-  registerRoute,
-  Response,
-  Rocket,
-  rocketMain,
-  Server,
-  serve as nativeServe,
-} from "../dist/index.js";
+import { file, serve as nativeServe, type Server } from "../dist/index.js";
 
-export { Config, file, launch, registerRoute, Response, Rocket, rocketMain, Server };
+export * from "../dist/index.js";
 export * from "./codegen.js";
 
 export function serve(options: any = {}): Server {
