@@ -26,6 +26,9 @@ export class Response {
   }
 }
 
+export const response = native.response;
+export const responseJson = native.responseJson;
+export const responseRedirect = native.responseRedirect;
 export const file = native.file;
 export const registerRoute = native.registerRoute;
 export const Server = native.Server;
@@ -60,4 +63,65 @@ export function serve(
 export async function launch(config?: native.ConfigInit) {
   const cfg = config ? native.Config.tryFrom(config) : native.Config.debugDefault();
   return cfg;
+}
+
+export class App {
+  private routesTable: Record<string, any> = {};
+  private serverHandle: native.Server | null = null;
+
+  get(path: string, handler: any): this {
+    return this.route("GET", path, handler);
+  }
+
+  post(path: string, handler: any): this {
+    return this.route("POST", path, handler);
+  }
+
+  put(path: string, handler: any): this {
+    return this.route("PUT", path, handler);
+  }
+
+  delete(path: string, handler: any): this {
+    return this.route("DELETE", path, handler);
+  }
+
+  patch(path: string, handler: any): this {
+    return this.route("PATCH", path, handler);
+  }
+
+  head(path: string, handler: any): this {
+    return this.route("HEAD", path, handler);
+  }
+
+  options(path: string, handler: any): this {
+    return this.route("OPTIONS", path, handler);
+  }
+
+  route(method: string, path: string, handler: any): this {
+    const existing = this.routesTable[path];
+    if (!existing) {
+      this.routesTable[path] = { [method.toUpperCase()]: handler };
+    } else if (
+      typeof existing === "object" &&
+      !(existing instanceof Response) &&
+      typeof existing !== "function"
+    ) {
+      existing[method.toUpperCase()] = handler;
+    } else {
+      this.routesTable[path] = { [method.toUpperCase()]: handler };
+    }
+    return this;
+  }
+
+  launch(options?: native.ServeOptions): native.Server {
+    this.serverHandle = native.serve(this.routesTable, null, options);
+    return this.serverHandle;
+  }
+
+  stop(): void {
+    if (this.serverHandle) {
+      this.serverHandle.stop();
+      this.serverHandle = null;
+    }
+  }
 }
