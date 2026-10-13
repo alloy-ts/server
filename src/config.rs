@@ -1,9 +1,9 @@
-//! NAPI bindings for Rocket's server [`Config`] (`rocket::config::Config`).
+//! NAPI bindings for Service's service [`Config`] (`service::config::Config`).
 //!
 //! This mirrors the documented `Config` API surface so Node.js callers can
-//! build, inspect, and mutate the configuration that drives a Rocket server.
+//! build, inspect, and mutate the configuration that drives a Service service.
 //!
-//! The NAPI `Config` class is a faithful, JS-friendly mirror of Rocket's
+//! The NAPI `Config` class is a faithful, JS-friendly mirror of Service's
 //! `Config`: every documented field is exposed as a getter/setter, and the
 //! static defaults / provider helpers (`debug_default`, `release_default`,
 //! `figment`, `try_from`, `from`) are provided as constructors and methods.
@@ -12,7 +12,7 @@
 //! objects (`Limits`, `Shutdown`, `TlsConfig`). The `secret_key` and `tls`
 //! fields are gated behind the `secrets` and `tls` crate features
 //! respectively; enable them in `Cargo.toml`
-//! (`rocket = { features = ["tls", "secrets"] }`) to surface those bindings.
+//! (`service = { features = ["tls", "secrets"] }`) to surface those bindings.
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -21,18 +21,18 @@ use napi::bindgen_prelude::Error as NapiError;
 use napi::Status;
 use napi_derive::napi;
 
-use rocket::config::{
-    Config as RocketConfig, Ident, LogLevel, RocketShutdown as RocketShutdownAlias, Sig,
+use service::config::{
+    Config as ServiceConfig, Ident, LogLevel, Shutdown as ServiceShutdownAlias, Sig,
 };
-use rocket::data::{ByteUnit, Limits as RocketLimits};
-use rocket::figment::{Profile, value::magic::RelativePathBuf};
-use rocket::http::uncased::Uncased;
+use service::data::{ByteUnit, Limits as ServiceLimits};
+use service::figment::{Profile, value::magic::RelativePathBuf};
+use service::http::uncased::Uncased;
 
 #[cfg(feature = "secrets")]
-use rocket::config::SecretKey;
+use service::config::SecretKey;
 
 #[cfg(feature = "tls")]
-use rocket::config::{CipherSuite, MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
+use service::config::{MutualTls as ServiceMutualTls, TlsConfig as ServiceTlsConfig};
 
 fn err<E: std::fmt::Display>(e: E) -> NapiError {
     NapiError::new(Status::GenericFailure, e.to_string())
@@ -82,21 +82,23 @@ pub const CLI_COLORS: &'static str = "cli_colors";
 // Composite NAPI value types
 // ---------------------------------------------------------------------------
 
-/// Mirrors `rocket::data::Limits`.
+/// Mirrors `service::data::Limits`.
 ///
 /// Each entry maps a data-type name (e.g. `"form"`, `"json"`) to a size
 /// expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
 /// or an SI unit string (`"32KiB"`).
+#[derive(Clone, Debug, Default)]
 #[napi(object)]
 pub struct Limits {
     pub limits: HashMap<String, String>,
 }
 
-/// Mirrors `rocket::config::Shutdown`.
+/// Mirrors `service::config::Shutdown`.
 ///
 /// All fields are optional so a partial override can be supplied; omitted
-/// fields fall back to Rocket's `Shutdown::default()`. Signal names use
-/// Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
+/// fields fall back to Service's `Shutdown::default()`. Signal names use
+/// Service's lowercase serde spelling (`"term"`, `"hup"`, ...).
+#[derive(Clone, Debug, Default)]
 #[napi(object)]
 pub struct Shutdown {
     pub ctrlc: Option<bool>,
@@ -106,19 +108,21 @@ pub struct Shutdown {
     pub force: Option<bool>,
 }
 
-/// Mirrors `rocket::config::TlsConfig`.
+/// Mirrors `service::config::TlsConfig`.
 #[cfg(feature = "tls")]
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct TlsConfig {
     pub certs: String,
     pub key: String,
-    pub prefer_server_cipher_order: Option<bool>,
+    pub prefer_service_cipher_order: Option<bool>,
     pub ciphers: Option<Vec<String>>,
     pub mutual: Option<MutualTls>,
 }
 
-/// Mirrors the `tls.mutual` portion of `rocket::config::TlsConfig`.
+/// Mirrors the `tls.mutual` portion of `service::config::TlsConfig`.
 #[cfg(feature = "tls")]
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct MutualTls {
     pub ca_certs: String,
@@ -133,10 +137,11 @@ fn parse_log_level(s: &str) -> napi::Result<LogLevel> {
     LogLevel::from_str(s).map_err(err)
 }
 
-fn parse_ident(value: Option<String>) -> napi::Result<Ident> {
+fn parse_ident(value: Option<&str>) -> napi::Result<Ident> {
     match value {
         None => Ok(Ident::none()),
-        Some(s) => Ident::try_new(&s).map_err(err),
+        Some(s) => Ident::try_new(s)
+            .map_err(|_| NapiError::new(Status::InvalidArg, format!("invalid ident: {s}"))),
     }
 }
 
@@ -162,8 +167,8 @@ fn parse_sig(s: &str) -> napi::Result<Sig> {
     })
 }
 
-fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
-    let mut limits = RocketLimits::default();
+fn build_limits(napi: &Limits) -> napi::Result<ServiceLimits> {
+    let mut limits = ServiceLimits::default();
     for (name, raw) in &napi.limits {
         let unit = match ByteUnit::from_str(raw) {
             Ok(u) => u,
@@ -177,20 +182,20 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        limits = limits.limit(name, unit);
+        limits = limits.limit(Uncased::from(name.clone()), unit);
     }
     Ok(limits)
 }
 
-fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
-    let mut shutdown = RocketShutdownAlias::default();
+fn build_shutdown(napi: &Shutdown) -> napi::Result<ServiceShutdownAlias> {
+    let mut shutdown = ServiceShutdownAlias::default();
     if let Some(v) = napi.ctrlc {
         shutdown.ctrlc = v;
     }
     if let Some(sigs) = &napi.signals {
-        let mut parsed = Vec::with_capacity(sigs.len());
+        let mut parsed = std::collections::HashSet::with_capacity(sigs.len());
         for s in sigs {
-            parsed.push(parse_sig(s)?);
+            parsed.insert(parse_sig(s)?);
         }
         shutdown.signals = parsed;
     }
@@ -207,10 +212,10 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
 }
 
 #[cfg(feature = "tls")]
-fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
-    let mut tls = RocketTlsConfig::from_paths(napi.certs.clone(), napi.key.clone());
-    if let Some(v) = napi.prefer_server_cipher_order {
-        tls = tls.with_preferred_server_cipher_order(v);
+fn build_tls(napi: &TlsConfig) -> napi::Result<ServiceTlsConfig> {
+    let mut tls = ServiceTlsConfig::from_paths(napi.certs.clone(), napi.key.clone());
+    if let Some(v) = napi.prefer_service_cipher_order {
+        tls = tls.with_preferred_service_cipher_order(v);
     }
     if let Some(ciphers) = &napi.ciphers {
         let mut parsed = Vec::with_capacity(ciphers.len());
@@ -227,7 +232,7 @@ fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
         tls = tls.with_ciphers(parsed);
     }
     if let Some(m) = &napi.mutual {
-        let mut mtls = RocketMutualTls::from_path(m.ca_certs.clone());
+        let mut mtls = ServiceMutualTls::from_path(m.ca_certs.clone());
         if let Some(mand) = m.mandatory {
             mtls = mtls.mandatory(mand);
         }
@@ -237,11 +242,11 @@ fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
 }
 
 // ---------------------------------------------------------------------------
-// Config NAPI class
+// ServiceConfig NAPI class
 // ---------------------------------------------------------------------------
 
 #[napi]
-pub struct Config {
+pub struct ServiceConfig {
     profile: Option<String>,
     address: String,
     port: u16,
@@ -262,11 +267,11 @@ pub struct Config {
 }
 
 #[napi]
-impl Config {
-    /// Create a `Config` seeded with Rocket's `debug` defaults.
+impl ServiceConfig {
+    /// Create a `ServiceConfig` seeded with Service's `debug` defaults.
     #[napi(constructor)]
     pub fn new() -> Self {
-        Self::from_rocket(&RocketConfig::debug_default())
+        Self::from_service(&ServiceConfig::debug_default())
     }
 
     // -- static factories -------------------------------------------------
@@ -274,30 +279,30 @@ impl Config {
     /// Returns the default configuration for the debug profile.
     #[napi]
     pub fn debug_default() -> Self {
-        Self::from_rocket(&RocketConfig::debug_default())
+        Self::from_service(&ServiceConfig::debug_default())
     }
 
     /// Returns the default configuration for the release profile.
     #[napi]
     pub fn release_default() -> Self {
-        Self::from_rocket(&RocketConfig::release_default())
+        Self::from_service(&ServiceConfig::release_default())
     }
 
     /// Returns the default configuration for the active profile.
     #[napi]
     pub fn default_config() -> Self {
-        Self::from_rocket(&RocketConfig::default())
+        Self::from_service(&ServiceConfig::default())
     }
 
-    /// Returns the configuration extracted from Rocket's default figment
-    /// (`Config::figment()`), i.e. defaults merged with `Rocket.toml` and
+    /// Returns the configuration extracted from Service's default figment
+    /// (`Config::figment()`), i.e. defaults merged with `Service.toml` and
     /// `ROCKET_*` environment variables.
     #[napi]
     pub fn figment() -> napi::Result<Self> {
-        let cfg = RocketConfig::figment()
-            .extract::<RocketConfig>()
+        let cfg = ServiceConfig::figment()
+            .extract::<ServiceConfig>()
             .map_err(err)?;
-        Ok(Self::from_rocket(&cfg))
+        Ok(Self::from_service(&cfg))
     }
 
     /// Builds a `Config` from a partial override object, mirroring
@@ -340,11 +345,11 @@ impl Config {
 
     // -- runtime helpers --------------------------------------------------
 
-    /// Returns the underlying `rocket::Config` built from the current fields.
-    pub(crate) fn build(&self) -> napi::Result<RocketConfig> {
-        let mut cfg = RocketConfig::default();
+    /// Returns the underlying `service::Config` built from the current fields.
+    pub(crate) fn build(&self) -> napi::Result<ServiceConfig> {
+        let mut cfg = ServiceConfig::default();
         if let Some(p) = &self.profile {
-            cfg.profile = Profile::new(p);
+            cfg.profile = Profile::new(p.as_str());
         }
         cfg.address = self
             .address
@@ -353,10 +358,10 @@ impl Config {
         cfg.port = self.port;
         cfg.workers = self.workers as usize;
         cfg.max_blocking = self.max_blocking as usize;
-        cfg.ident = parse_ident(self.ident.clone())?;
+        cfg.ident = parse_ident(self.ident.as_deref())?;
         cfg.ip_header = self.ip_header.clone().map(Uncased::from);
         cfg.limits = build_limits(&self.limits)?;
-        cfg.temp_dir = RelativePathBuf::from(self.temp_dir.clone());
+        cfg.temp_dir = RelativePathBuf::from(std::path::PathBuf::from(self.temp_dir.clone()));
         cfg.keep_alive = self.keep_alive;
         cfg.shutdown = build_shutdown(&self.shutdown)?;
         cfg.log_level = parse_log_level(&self.log_level)?;
@@ -447,7 +452,7 @@ impl Config {
     }
     #[napi(setter)]
     pub fn set_ident(&mut self, value: Option<String>) -> napi::Result<()> {
-        parse_ident(value)?;
+        parse_ident(value.as_deref())?;
         self.ident = value;
         Ok(())
     }
@@ -553,10 +558,10 @@ impl Config {
     }
 }
 
-impl Config {
-    /// Build this NAPI mirror from a concrete `rocket::Config`.
-    fn from_rocket(cfg: &RocketConfig) -> Self {
-        Config {
+impl ServiceConfig {
+    /// Build this NAPI mirror from a concrete `service::ServiceConfig`.
+    pub(crate) fn from_service(cfg: &ServiceConfig) -> Self {
+        ServiceConfig {
             profile: Some(cfg.profile.as_str().to_string()),
             address: cfg.address.to_string(),
             port: cfg.port,
@@ -564,18 +569,16 @@ impl Config {
             max_blocking: cfg.max_blocking as u32,
             ident: cfg.ident.as_str().map(|s| s.to_string()),
             ip_header: cfg.ip_header.as_ref().map(|u| u.as_str().to_string()),
-            // Rocket's `Limits` is not publicly iterable, so revert to empty.
+            // Service's `Limits` is not publicly iterable, so revert to empty.
             limits: Limits {
                 limits: HashMap::new(),
             },
-            temp_dir: cfg.temp_dir.to_string(),
+            temp_dir: cfg.temp_dir.relative().display().to_string(),
             keep_alive: cfg.keep_alive,
             #[cfg(feature = "tls")]
             tls: None,
             #[cfg(feature = "secrets")]
-            secret_key: serde_json::to_value(&cfg.secret_key)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            secret_key: None,
             shutdown: Shutdown {
                 ctrlc: Some(cfg.shutdown.ctrlc),
                 signals: Some(
@@ -651,13 +654,12 @@ impl Config {
     }
 }
 
-/// Partial override object accepted by [`Config::try_from`] / [`Config::from`].
+/// Partial override object accepted by [`ServiceConfig::try_from`] / [`ServiceConfig::from`].
 ///
 /// Every field is optional; supplied values override the debug defaults,
-/// mirroring `Config::try_from(figment.merge(...))`.
 ///
 /// `identNone` / `ipHeaderNone` force the corresponding value to `None`
-/// (server identity or client-IP header disabled), since `null` alone cannot
+/// (service identity or client-IP header disabled), since `null` alone cannot
 /// distinguish "unset" from "disable" for these `Option` fields.
 #[napi(object)]
 pub struct ConfigInit {
@@ -680,4 +682,125 @@ pub struct ConfigInit {
     pub shutdown: Option<Shutdown>,
     pub log_level: Option<String>,
     pub cli_colors: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug_default_values() {
+        let cfg = Config::debug_default();
+        assert_eq!(cfg.profile, Some("debug".to_string()));
+        assert_eq!(cfg.address, "127.0.0.1");
+        assert_eq!(cfg.port, 8000);
+        assert_eq!(cfg.ident, Some("Service".to_string()));
+        assert_eq!(cfg.ip_header, Some("X-Real-IP".to_string()));
+        assert_eq!(cfg.keep_alive, 5);
+        assert_eq!(cfg.log_level, "normal");
+        assert_eq!(cfg.cli_colors, true);
+    }
+
+    #[test]
+    fn test_release_default_values() {
+        let cfg = Config::release_default();
+        assert_eq!(cfg.profile, Some("release".to_string()));
+        assert_eq!(cfg.log_level, "critical");
+    }
+
+    #[test]
+    fn test_try_from_overrides() {
+        let mut limits_map = HashMap::new();
+        limits_map.insert("json".to_string(), "2MiB".to_string());
+        limits_map.insert("form".to_string(), "64KiB".to_string());
+
+        let init = ConfigInit {
+            profile: Some("custom".to_string()),
+            address: Some("0.0.0.0".to_string()),
+            port: Some(9000),
+            workers: Some(8),
+            max_blocking: Some(256),
+            ident: Some("CustomService".to_string()),
+            ident_none: None,
+            ip_header: None,
+            ip_header_none: Some(true),
+            limits: Some(Limits { limits: limits_map }),
+            temp_dir: Some("/tmp/service".to_string()),
+            keep_alive: Some(10),
+            #[cfg(feature = "tls")]
+            tls: None,
+            #[cfg(feature = "secrets")]
+            secret_key: None,
+            shutdown: Some(Shutdown {
+                ctrlc: Some(false),
+                signals: Some(vec!["term".to_string(), "hup".to_string()]),
+                grace: Some(3),
+                mercy: Some(3),
+                force: Some(true),
+            }),
+            log_level: Some("debug".to_string()),
+            cli_colors: Some(false),
+        };
+
+        let cfg = Config::try_from(init).unwrap();
+        assert_eq!(cfg.profile, Some("custom".to_string()));
+        assert_eq!(cfg.address, "0.0.0.0");
+        assert_eq!(cfg.port, 9000);
+        assert_eq!(cfg.workers, 8);
+        assert_eq!(cfg.max_blocking, 256);
+        assert_eq!(cfg.ident, Some("CustomService".to_string()));
+        assert_eq!(cfg.ip_header, None);
+        assert_eq!(cfg.keep_alive, 10);
+        assert_eq!(cfg.temp_dir, "/tmp/service");
+        assert_eq!(cfg.log_level, "debug");
+        assert_eq!(cfg.cli_colors, false);
+        assert_eq!(cfg.shutdown.ctrlc, Some(false));
+        assert_eq!(cfg.limits.limits.get("json").unwrap(), "2MiB");
+    }
+
+    #[test]
+    fn test_getters_and_setters() {
+        let mut cfg = Config::new();
+        assert!(cfg.set_address("192.168.1.1".to_string()).is_ok());
+        assert_eq!(cfg.address(), "192.168.1.1");
+        assert!(cfg.set_address("invalid-ip".to_string()).is_err());
+
+        cfg.set_port(8080);
+        assert_eq!(cfg.port(), 8080);
+
+        cfg.set_workers(16);
+        assert_eq!(cfg.workers(), 16);
+
+        cfg.set_max_blocking(1024);
+        assert_eq!(cfg.max_blocking(), 1024);
+
+        assert!(cfg.set_ident(Some("Service/1.0".to_string())).is_ok());
+        assert_eq!(cfg.ident(), Some("Service/1.0".to_string()));
+
+        assert!(cfg.set_log_level("critical".to_string()).is_ok());
+        assert_eq!(cfg.log_level(), "critical");
+        assert!(cfg.set_log_level("invalid".to_string()).is_err());
+
+        cfg.set_cli_colors(false);
+        assert_eq!(cfg.cli_colors(), false);
+    }
+
+    #[test]
+    fn test_parameters_list() {
+        let params = Config::parameters();
+        assert!(params.contains(&"address".to_string()));
+        assert!(params.contains(&"port".to_string()));
+        assert!(params.contains(&"workers".to_string()));
+        assert!(params.contains(&"max_blocking".to_string()));
+        assert!(params.contains(&"keep_alive".to_string()));
+        assert!(params.contains(&"ident".to_string()));
+        assert!(params.contains(&"ip_header".to_string()));
+        assert!(params.contains(&"limits".to_string()));
+        assert!(params.contains(&"tls".to_string()));
+        assert!(params.contains(&"secret_key".to_string()));
+        assert!(params.contains(&"temp_dir".to_string()));
+        assert!(params.contains(&"log_level".to_string()));
+        assert!(params.contains(&"shutdown".to_string()));
+        assert!(params.contains(&"cli_colors".to_string()));
+    }
 }

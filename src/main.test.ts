@@ -1,6 +1,8 @@
 import { expect, test } from "vite-plus/test";
-import { main } from "./main.ts";
+import { Service, response } from "../dist/index.js";
 
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
+test("Service registers a route and exposes launch", () => {
+  const app = new Service();
+  app.get("/", () => response("Hello, world!"));
+  expect(typeof app.launch).toBe("function");
 });

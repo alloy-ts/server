@@ -1,27 +1,17 @@
-//! NAPI bindings that let Node.js drive a Rocket server.
+//! NAPI bindings that let Node.js drive a service built on the underlying framework.
 //!
-//! This mirrors Rocket's server lifecycle (`rocket/src/server.rs`): building a
-//! `Rocket<Build>`, mounting [`Route`]s and [`Catcher`]s, igniting, launching,
-//! and graceful shutdown with the grace/mercy phases. It is the NAPI equivalent
-//! of `#[launch]` / `#[rocket::main]`:
+//! This mirrors the underlying framework's service lifecycle: building the initial
+//! configuration, mounting [`Route`]s and [`Catcher`]s, igniting, launching, and
+//! graceful shutdown with the grace/mercy phases. It is the NAPI equivalent of the
+//! framework's own launch entrypoint.
 //!
-//! ```rust,no_run
-//! #[rocket::main]
-//! async fn main() -> Result<(), rocket::Error> {
-//!     let rocket = rocket::build().ignite().await?;
-//!     rocket.launch().await?;
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ...where the `async fn` is instead driven by NAPI's tokio runtime. JS handlers
-//! are bridged into Rocket via [`rocket::route::Handler`] / [`rocket::catcher::Handler`]
-//! implementations that call a JS callback through a
+//! JS handlers are bridged into the underlying framework via its route and catcher
+//! `Handler` traits, implemented to call a JS callback through a
 //! [`napi::threadsafe_function::ThreadsafeFunction`].
 //!
 //! Note: a JS function can only be received as a *direct* `#[napi]` parameter
 //! (not nested in an object), so routes/catchers are mounted one handler at a
-//! time via [`Rocket::mount`] / [`Rocket::register`].
+//! time via the `mount` / `register` methods.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -32,15 +22,15 @@ use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
-use rocket::catcher::{self, Catcher};
-use rocket::http::{Method, Status as RocketStatus};
-use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
-use rocket::tokio::io::AsyncReadExt;
-use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
-use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
+use service::catcher::{self, Catcher};
+use service::http::{Method, Status as ServiceStatus};
+use service::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
+use service::tokio::io::AsyncReadExt;
+use service::{Build, Config, Data, Request, Response, Service as Svc, Shutdown};
+use service::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 
-/// Convert any displayable Rocket error into an NAPI error.
-fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
+/// Convert any displayable error from the underlying framework into an NAPI error.
+fn service_err<E: std::fmt::Display>(e: E) -> napi::Error {
     napi::Error::new(napi::Status::GenericFailure, e.to_string())
 }
 
@@ -58,7 +48,7 @@ pub struct RequestPayload {
     /// Path parameters extracted from the route pattern (e.g. `req.params.id`).
     pub params: Option<HashMap<String, String>>,
     /// Raw request body, or `undefined` when the request carries no body (e.g.
-    /// during error handling where Rocket does not provide one).
+    /// during error handling where the underlying framework does not provide one).
     pub body: Option<Buffer>,
 }
 
@@ -76,8 +66,9 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
-/// Build a `RequestPayload` from a Rocket request. The body is read fully when
-/// `data` is supplied; catchers receive `None` and produce no body.
+/// Build a `RequestPayload` from a request handled by the underlying framework.
+/// The body is read fully when `data` is supplied; catchers receive `None` and
+/// produce no body.
 pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
     let uri = req.uri();
     let method = req.method().as_str().to_string();
@@ -95,7 +86,7 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
 
     let body = match data {
         Some(data) => {
-            let mut stream = data.open(rocket::data::ByteUnit::max_value());
+            let mut stream = data.open(service::data::ByteUnit::max_value());
             let mut buf = Vec::new();
             let _ = stream.read_to_end(&mut buf).await;
             if buf.is_empty() {
@@ -128,10 +119,10 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
     }
 }
 
-/// Build a Rocket `Response` from a JS handler's return value.
+/// Build a `Response` from a JS handler's return value.
 pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
     let status =
-        RocketStatus::from_code(resp.status.unwrap_or(200) as u16).unwrap_or(RocketStatus::Ok);
+        ServiceStatus::from_code(resp.status.unwrap_or(200) as u16).unwrap_or(ServiceStatus::Ok);
     let mut builder = Response::build();
     builder.status(status);
 
@@ -146,7 +137,7 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
         builder.sized_body(bytes.len(), std::io::Cursor::new(bytes));
     }
 
-    builder.finalize()
+    builder.finalise()
 }
 
 type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
@@ -172,19 +163,19 @@ fn to_js_function(handler: Unknown) -> JsFunction {
 // Route handler bridge
 // ---------------------------------------------------------------------------
 
-/// A `rocket::route::Handler` that forwards to a JS callback.
+/// A route `Handler` (from the underlying framework) that forwards to a JS callback.
 #[derive(Clone)]
 struct JsRouteHandler {
     tsfn: Arc<HandlerTsfn>,
 }
 
-#[rocket::async_trait]
+#[service::async_trait]
 impl RouteHandler for JsRouteHandler {
     async fn handle<'r>(&self, req: &'r Request<'_>, data: Data<'r>) -> RouteOutcome<'r> {
         let payload = build_request_payload(req, Some(data)).await;
         match self.tsfn.call_async(Ok((payload,))).await {
             Ok(resp) => RouteOutcome::Success(build_response(resp)),
-            Err(_) => RouteOutcome::Error(RocketStatus::InternalServerError),
+            Err(_) => RouteOutcome::Error(ServiceStatus::InternalServiceError),
         }
     }
 }
@@ -193,19 +184,19 @@ impl RouteHandler for JsRouteHandler {
 // Catcher handler bridge
 // ---------------------------------------------------------------------------
 
-/// A `rocket::catcher::Handler` that forwards to a JS callback.
+/// A catcher `Handler` (from the underlying framework) that forwards to a JS callback.
 #[derive(Clone)]
 struct JsCatcherHandler {
     tsfn: Arc<HandlerTsfn>,
 }
 
-#[rocket::async_trait]
+#[service::async_trait]
 impl catcher::Handler for JsCatcherHandler {
-    async fn handle<'r>(&self, _status: RocketStatus, req: &'r Request<'_>) -> catcher::Result<'r> {
+    async fn handle<'r>(&self, _status: ServiceStatus, req: &'r Request<'_>) -> catcher::Result<'r> {
         let payload = build_request_payload(req, None).await;
         match self.tsfn.call_async(Ok((payload,))).await {
             Ok(resp) => Ok(build_response(resp)),
-            Err(_) => Err(RocketStatus::InternalServerError),
+            Err(_) => Err(ServiceStatus::InternalServiceError),
         }
     }
 }
@@ -221,10 +212,10 @@ pub struct ShutdownOptions {
     pub force: Option<bool>,
 }
 
-/// Rocket configuration, mirroring `rocket::Config` (a `Figment` provider).
-/// Any field left unset falls back to Rocket's defaults.
+/// Service configuration, mirroring the underlying framework's `Config` (a `Figment`
+/// provider). Any field left unset falls back to the framework's defaults.
 #[napi(object)]
-pub struct RocketConfig {
+pub struct ServiceConfig {
     pub address: Option<String>,
     pub port: Option<u16>,
     pub workers: Option<u32>,
@@ -235,18 +226,18 @@ pub struct RocketConfig {
     pub shutdown: Option<ShutdownOptions>,
 }
 
-/// A handle to a Rocket server, mirroring `#[launch]` / `#[rocket::main]`.
+/// A handle to a service, mirroring the underlying framework's launch entrypoint.
 #[napi]
-pub struct Rocket {
-    inner: Arc<Mutex<Option<RocketServer<Build>>>>,
+pub struct Service {
+    inner: Arc<Mutex<Option<Svc<Build>>>>,
     shutdown: Arc<Mutex<Option<Shutdown>>>,
 }
 
 #[napi]
-impl Rocket {
-    /// Create a new Rocket instance from the given configuration.
+impl Service {
+    /// Create a new service instance from the given configuration.
     #[napi(constructor)]
-    pub fn new(config: Option<RocketConfig>) -> Result<Self> {
+    pub fn new(config: Option<ServiceConfig>) -> Result<Self> {
         let mut cfg = Config::default();
 
         if let Some(c) = config {
@@ -287,13 +278,13 @@ impl Rocket {
         }
 
         Ok(Self {
-            inner: Arc::new(Mutex::new(Some(rocket::custom(cfg)))),
+            inner: Arc::new(Mutex::new(Some(service::custom(cfg)))),
             shutdown: Arc::new(Mutex::new(None)),
         })
     }
 
     /// Mount a single `handler` for `method` at `path` under `base`.
-    /// Equivalent to `rocket.mount(base, vec![Route::new(method, path, handler)])`.
+    /// Equivalent to mounting a single `Route` at `base`.
     ///
     /// `handler` is `(err: null, req: RequestPayload) => ResponsePayload | Promise<ResponsePayload>`.
     #[napi]
@@ -306,16 +297,16 @@ impl Rocket {
         let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
-        let rocket = guard
+        let service = guard
             .take()
-            .ok_or_else(|| Error::new(Status::GenericFailure, "server already launched"))?;
-        *guard = Some(rocket.mount(&base, vec![route]));
+            .ok_or_else(|| Error::new(Status::GenericFailure, "service already launched"))?;
+        *guard = Some(service.mount(&base, vec![route]));
         Ok(())
     }
 
     /// Register a single catcher `handler`. `code` is the HTTP status it handles
     /// (in `[400, 600)`); pass `None` for the default catcher.
-    /// Equivalent to `rocket.register(base, vec![Catcher::new(code, handler)])`.
+    /// Equivalent to registering a single `Catcher` at `base`.
     #[napi]
     #[allow(deprecated)]
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
@@ -324,39 +315,32 @@ impl Rocket {
         let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
-        let rocket = guard
+        let service = guard
             .take()
-            .ok_or_else(|| Error::new(Status::GenericFailure, "server already launched"))?;
-        *guard = Some(rocket.register(&base, vec![catcher]));
+            .ok_or_else(|| Error::new(Status::GenericFailure, "service already launched"))?;
+        *guard = Some(service.register(&base, vec![catcher]));
         Ok(())
     }
 
-    /// Ignite and launch this server, resolving when the server shuts down.
+    /// Ready and launch this service, resolving when the service shuts down.
     ///
-    /// This mirrors the generated `main` from `#[launch]`:
-    ///
-    /// ```rust,no_run
-    /// #[rocket::main]
-    /// async fn main() {
-    ///     let _ = rocket().launch().await;
-    /// }
-    /// ```
+    /// This mirrors the generated entrypoint from the framework's launch macro:
     #[napi]
     pub async fn launch(&self) -> Result<()> {
-        let rocket = {
+        let service = {
             let mut guard = self
                 .inner
                 .lock()
                 .map_err(|_| Error::new(Status::GenericFailure, "lock poisoned"))?;
             guard.take().ok_or_else(|| {
-                Error::new(Status::GenericFailure, "server already launched or not configured")
+                Error::new(Status::GenericFailure, "service already launched or not configured")
             })?
         };
 
-        let rocket = rocket.ignite().await.map_err(rocket_err)?;
-        let shutdown = rocket.shutdown();
+        let service = service.start().await.map_err(service_err)?;
+        let shutdown = service.shutdown();
         *self.shutdown.lock().unwrap() = Some(shutdown);
-        rocket.launch().await.map_err(rocket_err)?;
+        service.launch().await.map_err(service_err)?;
         Ok(())
     }
 
@@ -369,20 +353,20 @@ impl Rocket {
                 shutdown.clone().notify();
                 Ok(())
             }
-            None => Err(Error::new(Status::GenericFailure, "server is not running")),
+            None => Err(Error::new(Status::GenericFailure, "service is not running")),
         }
     }
 }
 
-/// Convenience mirror of `#[launch]`: build (with optional config), ignite,
-/// launch, and resolve once the server shuts down.
+/// Convenience mirror of the framework's launch entrypoint: build (with optional
+/// config), start, launch, and resolve once the service shuts down.
 #[napi]
-pub async fn launch(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
+pub async fn launch(config: Option<ServiceConfig>) -> Result<()> {
+    Service::new(config)?.launch().await
 }
 
-/// Mirror of `#[rocket::main]`'s inspectable form: ignite, launch, resolve.
+/// Mirror of the framework's inspectable launch form: start, launch, resolve.
 #[napi]
-pub async fn rocket_main(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
+pub async fn service_main(config: Option<ServiceConfig>) -> Result<()> {
+    Service::new(config)?.launch().await
 }
