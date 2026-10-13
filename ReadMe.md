@@ -21,10 +21,11 @@ Node.js (TypeScript) NAPI bindings for the Rocket web framework and code generat
 ### Basic Server (`Alloy.serve`)
 
 ```ts
-import { serve, Response, file } from "@alloy-ts/server";
+import { Alloy, Response, file } from "@alloy-ts/server";
 
-const server = serve({
+const server = Alloy.serve({
   port: 3000,
+  hostname: "0.0.0.0",
   routes: {
     "/api/status": new Response("OK"),
     "/users/:id": (req) => new Response(`Hello ${req.params?.id}`),
@@ -32,6 +33,8 @@ const server = serve({
       GET: () => new Response("List posts"),
       POST: async (req) => Response.json({ created: true }),
     },
+    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
+    "/blog/hello": Response.redirect("/blog/hello/world"),
     "/favicon.ico": file("./favicon.ico"),
   },
   fetch(req) {
@@ -40,6 +43,12 @@ const server = serve({
 });
 
 console.log(`Server running at ${server.url}`);
+```
+
+Run the example with `@oxc-node/core`:
+
+```bash
+node --import @oxc-node/core/register examples/server.ts
 ```
 
 ---
