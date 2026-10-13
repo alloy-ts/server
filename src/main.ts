@@ -36,6 +36,11 @@ export function uri(
   return native.buildUri(template, strParams);
 }
 
+export const parseRouteAttribute = native.parseRouteAttribute;
+export const parseCatcherAttribute = native.parseCatcherAttribute;
+export const buildUri = native.buildUri;
+export const generateTsRouteManifest = native.generateTsRouteManifest;
+
 export const Rocket = native.Rocket;
 export const Config = native.Config;
 
@@ -46,6 +51,10 @@ export const Alloy = {
   Rocket,
   Config,
   uri,
+  parseRouteAttribute,
+  parseCatcherAttribute,
+  buildUri,
+  generateTsRouteManifest,
 };
 
 export default Alloy;
