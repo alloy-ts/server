@@ -1,28 +1,6 @@
-import {
-  serve,
-  file,
-  Response,
-  Config,
-  Rocket,
-  registerRoute,
-  launch,
-  createRouteMetadata,
-  generateRoutesManifest,
-  buildUri,
-} from "../dist/index.js";
+export * from "../dist/index.js";
 
-export {
-  serve,
-  file,
-  Response,
-  Config,
-  Rocket,
-  registerRoute,
-  launch,
-  createRouteMetadata,
-  generateRoutesManifest,
-  buildUri,
-};
+import { serve, file } from "../dist/index.js";
 
 export const Alloy = {
   serve,

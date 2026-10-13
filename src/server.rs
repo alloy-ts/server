@@ -17,7 +17,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
-use napi::bindgen_prelude::Function;
 use napi::bindgen_prelude::Object as JsObject;
 #[allow(deprecated)]
 use napi::{JsFunction, Unknown};
@@ -36,7 +35,7 @@ use rocket::{Data, Shutdown};
 type HandlerTsfn = ThreadsafeFunction<
     RequestInput,
     Either<Promise<ResponsePayload>, ResponsePayload>,
-    (RequestInput,),
+    (serde_json::Value,),
     Status,
     true,
     false,
@@ -52,23 +51,14 @@ fn to_js_function(handler: Unknown) -> JsFunction {
     unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
 }
 
-/// A key-value parameter entry extracted from dynamic route segments.
-#[napi(object)]
-#[derive(Clone, Debug)]
-pub struct ParamEntry {
-    pub key: String,
-    pub value: String,
-}
-
-/// Wire type sent from Rust -> JS for every request.
-#[napi(object)]
+/// Internal request structure passed across Tokio threads to the JS thread.
 pub struct RequestInput {
     pub method: String,
     pub path: String,
     pub query: String,
     pub headers: Vec<Header>,
     pub body: Option<Buffer>,
-    pub params: Vec<ParamEntry>,
+    pub params: HashMap<String, String>,
 }
 
 /// A single HTTP header.
@@ -207,10 +197,16 @@ impl Handler for JsHandler {
                 let output = match tsfn.call_async(Ok(input)).await {
                     Ok(Either::A(promise)) => match promise.await {
                         Ok(payload) => payload,
-                        Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
+                        Err(e) => {
+                            eprintln!("[ERR A] {:?}", e);
+                            return RouteOutcome::Error(RocketStatus::InternalServerError);
+                        }
                     },
                     Ok(Either::B(payload)) => payload,
-                    Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
+                    Err(e) => {
+                        eprintln!("[ERR B] {:?}", e);
+                        return RouteOutcome::Error(RocketStatus::InternalServerError);
+                    }
                 };
                 RouteOutcome::Success(build_response(&output))
             }
@@ -230,7 +226,7 @@ impl Handler for JsHandler {
 async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
-    let path = uri.path().to_string();
+    let path = uri.path().as_str().to_string();
     let query = uri.query().map(|q| q.to_string()).unwrap_or_default();
     let headers = request
         .headers()
@@ -246,11 +242,7 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
         Err(_) => None,
     };
 
-    let params_map = extract_params(pattern, &path);
-    let params = params_map
-        .into_iter()
-        .map(|(key, value)| ParamEntry { key, value })
-        .collect();
+    let params = extract_params(pattern, &path);
 
     RequestInput {
         method,
@@ -287,7 +279,13 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 
         if let Some(name) = name {
             if name != "_" {
-                if let Some(v) = a_segs.get(idx) {
+                if seg.contains("..>") {
+                    if idx < a_segs.len() {
+                        let trailing = a_segs[idx..].join("/");
+                        params.insert(name.to_string(), trailing);
+                    }
+                    break;
+                } else if let Some(v) = a_segs.get(idx) {
                     params.insert(name.to_string(), (*v).to_string());
                 }
             }
@@ -297,7 +295,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 }
 
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -350,6 +351,33 @@ const ALL_METHODS: &[Method] = &[
 ];
 
 #[allow(deprecated)]
+fn create_handler_tsfn(env: &Env, handler: Unknown) -> napi::Result<HandlerTsfn> {
+    let wrapper_factory: Function = env.run_script("(f) => (err, req) => f(err ? err : (Array.isArray(req) ? req[0] : req))")?;
+    let wrapped_val: Unknown = wrapper_factory.call(handler)?;
+    let f = to_js_function(wrapped_val);
+    f.create_threadsafe_function::<RequestInput, (serde_json::Value,), Either<Promise<ResponsePayload>, ResponsePayload>, Status, _, true, false, 0>(
+        |ctx| {
+            let headers_json: Vec<serde_json::Value> = ctx
+                .value
+                .headers
+                .into_iter()
+                .map(|h| serde_json::json!({ "name": h.name, "value": h.value }))
+                .collect();
+            let body_json = ctx.value.body.map(|b| b.to_vec());
+            let val = serde_json::json!({
+                "method": ctx.value.method,
+                "path": ctx.value.path,
+                "query": ctx.value.query,
+                "headers": headers_json,
+                "body": body_json,
+                "params": ctx.value.params,
+            });
+            Ok((val,))
+        },
+    )
+}
+
+#[allow(deprecated)]
 fn mount_value<'env>(
     env: &Env,
     value: Unknown<'env>,
@@ -357,25 +385,8 @@ fn mount_value<'env>(
     methods: &[Method],
     out: &mut Vec<Route>,
 ) -> napi::Result<()> {
-    let is_fn = if value.get_type()? == ValueType::Function {
-        true
-    } else if value.get_type()? == ValueType::Object {
-        let check_fn: Function = env.run_script("(f) => typeof f === 'function'")?;
-        let res: Unknown = check_fn.call(value)?;
-        res.coerce_to_bool()?
-    } else {
-        false
-    };
-    if is_fn {
-        let wrapper_factory: Function = env.run_script(
-            "(f) => (a, b) => { const req = a || b; if (req && Array.isArray(req.params)) { const p = {}; for (const e of req.params) { p[e.key] = e.value; } req.params = p; } return f(req); }"
-        )?;
-        let wrapped_val: Unknown = wrapper_factory.call(value)?;
-        let f = to_js_function(wrapped_val);
-        let tsfn: HandlerTsfn = f
-            .create_threadsafe_function::<RequestInput, (RequestInput,), Either<Promise<ResponsePayload>, ResponsePayload>, Status, _, true, false, 0>(
-                |ctx| Ok((ctx.value,)),
-            )?;
+    if value.get_type()? == ValueType::Function {
+        let tsfn: HandlerTsfn = create_handler_tsfn(env, value)?;
         push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         return Ok(());
     }
@@ -430,9 +441,6 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
         out.push(Route::new(*m, &rocket_pattern, handler.clone()));
     }
 }
-
-type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
-static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
 static RT: OnceLock<rocket::tokio::runtime::Runtime> = OnceLock::new();
 
@@ -513,16 +521,13 @@ pub fn serve(
     }
 
     if let Some(fetch) = fetch_val {
-        let wrapper_factory: Function = env.run_script("(f) => (err, req) => f(req)")?;
-        let wrapped_val: Unknown = wrapper_factory.call(fetch)?;
-        let f = to_js_function(wrapped_val);
-        let tsfn: HandlerTsfn = f
-            .create_threadsafe_function::<RequestInput, (RequestInput,), Either<Promise<ResponsePayload>, ResponsePayload>, Status, _, true, false, 0>(
-                |ctx| Ok((ctx.value,)),
-            )?;
+        let tsfn: HandlerTsfn = create_handler_tsfn(&env, fetch)?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            out.push(Route::ranked(10, *m, "/<_..>", JsHandler {
+                kind: Arc::new(RouteKind::Fn(tsfn.clone())),
+                pattern: "/<_..>".to_string(),
+            }));
         }
     }
 
@@ -530,15 +535,15 @@ pub fn serve(
     config.port = port;
     config.address = address;
 
-    let slot: ShutdownSlot = Arc::new(Mutex::new(None));
-    SHUTDOWN.get_or_init(|| slot.clone());
+    let shutdown_slot: Arc<Mutex<Option<Shutdown>>> = Arc::new(Mutex::new(None));
+    let shutdown_slot_clone = shutdown_slot.clone();
 
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
             Box::pin(async move {
-                *slot.lock().unwrap() = Some(orbit.shutdown());
+                *shutdown_slot_clone.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
     tokio_runtime().spawn(async move {
@@ -548,6 +553,7 @@ pub fn serve(
     Ok(Server {
         url,
         port: port as u32,
+        shutdown: shutdown_slot,
     })
 }
 
@@ -562,16 +568,15 @@ pub struct ServeOptions {
 pub struct Server {
     pub url: String,
     pub port: u32,
+    shutdown: Arc<Mutex<Option<Shutdown>>>,
 }
 
 #[napi]
 impl Server {
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(slot) = SHUTDOWN.get() {
-            if let Some(shutdown) = slot.lock().unwrap().take() {
-                shutdown.notify();
-            }
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
         }
         Ok(())
     }
@@ -585,13 +590,7 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 
 #[napi]
 pub fn register_route(env: Env, method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
-    let wrapper_factory: Function = env.run_script("(f) => (err, req) => f(req)")?;
-    let wrapped_val: Unknown = wrapper_factory.call(handler)?;
-    let f = to_js_function(wrapped_val);
-    let tsfn: HandlerTsfn = f
-        .create_threadsafe_function::<RequestInput, (RequestInput,), Either<Promise<ResponsePayload>, ResponsePayload>, Status, _, true, false, 0>(
-            |ctx| Ok((ctx.value,)),
-        )?;
+    let tsfn: HandlerTsfn = create_handler_tsfn(&env, handler)?;
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
