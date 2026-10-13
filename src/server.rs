@@ -293,7 +293,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
 /// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -454,6 +457,9 @@ pub fn serve(
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
+    if let Ok(mut guard) = get_registered_routes().lock() {
+        out.append(&mut *guard);
+    }
     if let Some(table) = routes {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
@@ -474,7 +480,7 @@ pub fn serve(
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            push_kind(RouteKind::Fn(tsfn.clone()), "/<_..>", &[*m], &mut out);
         }
     }
 
@@ -551,7 +557,7 @@ impl Server {
 
 static ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
 
-fn routes() -> &'static Mutex<Vec<Route>> {
+fn get_registered_routes() -> &'static Mutex<Vec<Route>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -570,7 +576,7 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-    let mut routes = routes().lock().unwrap();
+    let mut routes = get_registered_routes().lock().unwrap();
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
 }
