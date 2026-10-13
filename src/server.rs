@@ -661,3 +661,89 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Express / Rocket-style App class for method-chaining route definition
+// ---------------------------------------------------------------------------
+
+/// Express / Rocket-style application builder (`App`) that re-expresses
+/// Rocket's `#[get]`, `routes!`, and `#[launch]` macros at runtime.
+#[napi]
+pub struct App {
+    server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self {
+            server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Register a `GET` route.
+    #[napi]
+    pub fn get(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("GET".to_string(), path, handler)
+    }
+
+    /// Register a `POST` route.
+    #[napi]
+    pub fn post(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("POST".to_string(), path, handler)
+    }
+
+    /// Register a `PUT` route.
+    #[napi]
+    pub fn put(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PUT".to_string(), path, handler)
+    }
+
+    /// Register a `DELETE` route.
+    #[napi]
+    pub fn delete(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("DELETE".to_string(), path, handler)
+    }
+
+    /// Register a `PATCH` route.
+    #[napi]
+    pub fn patch(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PATCH".to_string(), path, handler)
+    }
+
+    /// Mount a handler under `base`.
+    #[napi]
+    pub fn mount(&self, base: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        let full_path = if base == "/" {
+            path
+        } else {
+            format!("{base}{path}")
+        };
+        register_route("GET".to_string(), full_path, handler)
+    }
+
+    /// Launch the server with accumulated routes (counterpart of `#[launch]`).
+    #[napi]
+    pub fn launch(&self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let s = serve(None, None, options)?;
+        if let Ok(mut guard) = self.server.lock() {
+            *guard = Some(Server {
+                url: s.url.clone(),
+                port: s.port,
+            });
+        }
+        Ok(s)
+    }
+
+    /// Stop the running server.
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Ok(guard) = self.server.lock() {
+            if let Some(s) = guard.as_ref() {
+                s.stop()?;
+            }
+        }
+        Ok(())
+    }
+}

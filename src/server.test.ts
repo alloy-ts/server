@@ -7,6 +7,7 @@ import {
   file,
   registerRoute,
   Server,
+  App,
   type RequestInput,
 } from "../dist/index.js";
 
@@ -173,6 +174,33 @@ describe("Rocket server NAPI bindings", () => {
 
       expect(unixServer.url).toBe("unix:///tmp/my-test-socket.sock");
       unixServer.stop();
+    });
+  });
+
+  describe("App builder class", () => {
+    test("App get, post, and launch register routes and handle HTTP requests", async () => {
+      const app = new App();
+
+      app.get("/app-hello", async () => response("Hello from App!"));
+      app.post("/app-echo", async (req: RequestInput) => responseJson({ path: req.path }));
+
+      const server = app.launch({ port: 0, hostname: "127.0.0.1" });
+
+      expect(server.port).toBeGreaterThan(0);
+      expect(server.url).toBe(`http://127.0.0.1:${server.port}`);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const res1 = await fetch(`${server.url}/app-hello`);
+      expect(res1.status).toBe(200);
+      expect(await res1.text()).toBe("Hello from App!");
+
+      const res2 = await fetch(`${server.url}/app-echo`, { method: "POST" });
+      expect(res2.status).toBe(200);
+      const json2 = await res2.json();
+      expect(json2).toEqual({ path: "/app-echo" });
+
+      app.stop();
     });
   });
 
