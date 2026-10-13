@@ -100,6 +100,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
                     }
                 }
             }
+        } else if let Some(name) = seg.strip_prefix(':') {
+            if let Some(v) = a_segs.get(idx) {
+                params.insert(name.to_string(), (*v).to_string());
+            }
         }
     }
     params
