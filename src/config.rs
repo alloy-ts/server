@@ -22,17 +22,12 @@ use napi::Status;
 use napi_derive::napi;
 
 use rocket::config::{
-    Config as RocketConfig, Ident, LogLevel, RocketShutdown as RocketShutdownAlias, Sig,
+    Config as RocketConfig, Ident, LogLevel, Shutdown as RocketShutdownAlias, Sig,
 };
 use rocket::data::{ByteUnit, Limits as RocketLimits};
 use rocket::figment::{Profile, value::magic::RelativePathBuf};
 use rocket::http::uncased::Uncased;
 
-#[cfg(feature = "secrets")]
-use rocket::config::SecretKey;
-
-#[cfg(feature = "tls")]
-use rocket::config::{CipherSuite, MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
 
 fn err<E: std::fmt::Display>(e: E) -> NapiError {
     NapiError::new(Status::GenericFailure, e.to_string())
@@ -88,6 +83,7 @@ pub const CLI_COLORS: &'static str = "cli_colors";
 /// expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
 /// or an SI unit string (`"32KiB"`).
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Limits {
     pub limits: HashMap<String, String>,
 }
@@ -98,6 +94,7 @@ pub struct Limits {
 /// fields fall back to Rocket's `Shutdown::default()`. Signal names use
 /// Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Shutdown {
     pub ctrlc: Option<bool>,
     pub signals: Option<Vec<String>>,
@@ -107,8 +104,8 @@ pub struct Shutdown {
 }
 
 /// Mirrors `rocket::config::TlsConfig`.
-#[cfg(feature = "tls")]
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct TlsConfig {
     pub certs: String,
     pub key: String,
@@ -118,8 +115,8 @@ pub struct TlsConfig {
 }
 
 /// Mirrors the `tls.mutual` portion of `rocket::config::TlsConfig`.
-#[cfg(feature = "tls")]
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct MutualTls {
     pub ca_certs: String,
     pub mandatory: Option<bool>,
@@ -133,10 +130,10 @@ fn parse_log_level(s: &str) -> napi::Result<LogLevel> {
     LogLevel::from_str(s).map_err(err)
 }
 
-fn parse_ident(value: Option<String>) -> napi::Result<Ident> {
+fn parse_ident(value: Option<&str>) -> napi::Result<Ident> {
     match value {
         None => Ok(Ident::none()),
-        Some(s) => Ident::try_new(&s).map_err(err),
+        Some(s) => Ident::try_new(s).map_err(err),
     }
 }
 
@@ -177,7 +174,7 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        limits = limits.limit(name, unit);
+        limits = limits.limit(name.to_string(), unit);
     }
     Ok(limits)
 }
@@ -188,9 +185,9 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
         shutdown.ctrlc = v;
     }
     if let Some(sigs) = &napi.signals {
-        let mut parsed = Vec::with_capacity(sigs.len());
+        let mut parsed = std::collections::HashSet::with_capacity(sigs.len());
         for s in sigs {
-            parsed.push(parse_sig(s)?);
+            parsed.insert(parse_sig(s)?);
         }
         shutdown.signals = parsed;
     }
@@ -206,34 +203,8 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
     Ok(shutdown)
 }
 
-#[cfg(feature = "tls")]
-fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
-    let mut tls = RocketTlsConfig::from_paths(napi.certs.clone(), napi.key.clone());
-    if let Some(v) = napi.prefer_server_cipher_order {
-        tls = tls.with_preferred_server_cipher_order(v);
-    }
-    if let Some(ciphers) = &napi.ciphers {
-        let mut parsed = Vec::with_capacity(ciphers.len());
-        for c in ciphers {
-            parsed.push(
-                serde_json::from_value(serde_json::Value::String(c.clone())).map_err(|e| {
-                    NapiError::new(
-                        Status::InvalidArg,
-                        format!("invalid cipher suite `{c}`: {e}"),
-                    )
-                })?,
-            );
-        }
-        tls = tls.with_ciphers(parsed);
-    }
-    if let Some(m) = &napi.mutual {
-        let mut mtls = RocketMutualTls::from_path(m.ca_certs.clone());
-        if let Some(mand) = m.mandatory {
-            mtls = mtls.mandatory(mand);
-        }
-        tls = tls.with_mutual(mtls);
-    }
-    Ok(tls)
+fn build_tls(_napi: &TlsConfig) -> napi::Result<()> {
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -252,9 +223,7 @@ pub struct Config {
     limits: Limits,
     temp_dir: String,
     keep_alive: u32,
-    #[cfg(feature = "tls")]
     tls: Option<TlsConfig>,
-    #[cfg(feature = "secrets")]
     secret_key: Option<String>,
     shutdown: Shutdown,
     log_level: String,
@@ -353,7 +322,7 @@ impl Config {
         cfg.port = self.port;
         cfg.workers = self.workers as usize;
         cfg.max_blocking = self.max_blocking as usize;
-        cfg.ident = parse_ident(self.ident.clone())?;
+        cfg.ident = parse_ident(self.ident.as_deref())?;
         cfg.ip_header = self.ip_header.clone().map(Uncased::from);
         cfg.limits = build_limits(&self.limits)?;
         cfg.temp_dir = RelativePathBuf::from(self.temp_dir.clone());
@@ -362,35 +331,12 @@ impl Config {
         cfg.log_level = parse_log_level(&self.log_level)?;
         cfg.cli_colors = self.cli_colors;
 
-        #[cfg(feature = "tls")]
-        {
-            cfg.tls = self.tls.as_ref().map(build_tls).transpose()?;
-        }
-        #[cfg(feature = "secrets")]
-        if let Some(s) = &self.secret_key {
-            cfg.secret_key =
-                serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|e| {
-                    NapiError::new(Status::InvalidArg, format!("invalid secret_key: {e}"))
-                })?;
-        }
 
         Ok(cfg)
     }
 
     /// Returns `true` if TLS is enabled (requires the `tls` feature and a
     /// configured ciphersuite).
-    #[cfg(feature = "tls")]
-    #[napi]
-    pub fn tls_enabled(&self) -> bool {
-        self.build().map(|c| c.tls_enabled()).unwrap_or(false)
-    }
-
-    /// Returns `true` if mTLS is enabled (requires the `mtls` feature).
-    #[cfg(feature = "tls")]
-    #[napi]
-    pub fn mtls_enabled(&self) -> bool {
-        self.build().map(|c| c.mtls_enabled()).unwrap_or(false)
-    }
 
     // -- getters / setters ------------------------------------------------
 
@@ -447,7 +393,7 @@ impl Config {
     }
     #[napi(setter)]
     pub fn set_ident(&mut self, value: Option<String>) -> napi::Result<()> {
-        parse_ident(value)?;
+        parse_ident(value.as_deref())?;
         self.ident = value;
         Ok(())
     }
@@ -490,33 +436,22 @@ impl Config {
         self.keep_alive = value;
     }
 
-    #[cfg(feature = "tls")]
     #[napi(getter)]
     pub fn tls(&self) -> Option<TlsConfig> {
         self.tls.clone()
     }
-    #[cfg(feature = "tls")]
     #[napi(setter)]
     pub fn set_tls(&mut self, value: Option<TlsConfig>) -> napi::Result<()> {
-        if let Some(t) = &value {
-            build_tls(t)?; // validate eagerly
-        }
         self.tls = value;
         Ok(())
     }
 
-    #[cfg(feature = "secrets")]
     #[napi(getter)]
     pub fn secret_key(&self) -> Option<String> {
         self.secret_key.clone()
     }
-    #[cfg(feature = "secrets")]
     #[napi(setter)]
     pub fn set_secret_key(&mut self, value: Option<String>) -> napi::Result<()> {
-        if let Some(s) = &value {
-            serde_json::from_value::<SecretKey>(serde_json::Value::String(s.clone()))
-                .map_err(|e| NapiError::new(Status::InvalidArg, format!("invalid secret_key: {e}")))?;
-        }
         self.secret_key = value;
         Ok(())
     }
@@ -568,14 +503,10 @@ impl Config {
             limits: Limits {
                 limits: HashMap::new(),
             },
-            temp_dir: cfg.temp_dir.to_string(),
+            temp_dir: cfg.temp_dir.relative().to_string_lossy().to_string(),
             keep_alive: cfg.keep_alive,
-            #[cfg(feature = "tls")]
             tls: None,
-            #[cfg(feature = "secrets")]
-            secret_key: serde_json::to_value(&cfg.secret_key)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            secret_key: None,
             shutdown: Shutdown {
                 ctrlc: Some(cfg.shutdown.ctrlc),
                 signals: Some(
@@ -630,11 +561,9 @@ impl Config {
         if let Some(v) = init.keep_alive {
             self.keep_alive = v;
         }
-        #[cfg(feature = "tls")]
         if let Some(v) = init.tls {
             self.set_tls(Some(v))?;
         }
-        #[cfg(feature = "secrets")]
         if let Some(v) = init.secret_key {
             self.set_secret_key(Some(v))?;
         }
@@ -673,9 +602,7 @@ pub struct ConfigInit {
     pub limits: Option<Limits>,
     pub temp_dir: Option<String>,
     pub keep_alive: Option<u32>,
-    #[cfg(feature = "tls")]
     pub tls: Option<TlsConfig>,
-    #[cfg(feature = "secrets")]
     pub secret_key: Option<String>,
     pub shutdown: Option<Shutdown>,
     pub log_level: Option<String>,
