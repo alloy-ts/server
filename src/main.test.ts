@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Alloy, main } from "./main.ts";
+import { Alloy, App, main } from "./main.ts";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
@@ -36,6 +36,15 @@ test("Alloy.serve starts and stops server", () => {
       "/api/status": Alloy.Response("OK"),
     },
   });
+  expect(server.port).toBeGreaterThan(0);
+  expect(server.url).toContain("http://");
+  server.stop();
+});
+
+test("App class registers routes and launches server", () => {
+  const app = new App({ port: 0 });
+  app.get("/hello", async () => Alloy.Response("world"));
+  const server = app.launch();
   expect(server.port).toBeGreaterThan(0);
   expect(server.url).toContain("http://");
   server.stop();
