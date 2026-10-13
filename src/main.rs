@@ -33,11 +33,11 @@ use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::catcher::{self, Catcher};
+use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 use rocket::http::{Method, Status as RocketStatus};
 use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
 use rocket::tokio::io::AsyncReadExt;
 use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
-use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 
 /// Convert any displayable Rocket error into an NAPI error.
 fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
@@ -76,6 +76,35 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
+fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
+    let p_segs: Vec<&str> = pattern
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let a_segs: Vec<&str> = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut params = HashMap::new();
+    for (idx, seg) in p_segs.iter().enumerate() {
+        if let Some(inner) = seg.strip_prefix('<') {
+            let name = inner
+                .strip_suffix("..>")
+                .or_else(|| inner.strip_suffix('>'));
+            if let Some(name) = name {
+                if name != "_" {
+                    if let Some(v) = a_segs.get(idx) {
+                        params.insert(name.to_string(), (*v).to_string());
+                    }
+                }
+            }
+        }
+    }
+    params
+}
+
 /// Build a `RequestPayload` from a Rocket request. The body is read fully when
 /// `data` is supplied; catchers receive `None` and produce no body.
 pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
@@ -107,23 +136,16 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
         None => None,
     };
 
-    let params: HashMap<String, String> = req
+    let params = req
         .route()
-        .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
+        .map(|r| extract_params(&r.uri.to_string(), &path));
 
     RequestPayload {
         method,
         path,
         query,
         headers,
-        params: if params.is_empty() { None } else { Some(params) },
+        params,
         body,
     }
 }
@@ -152,13 +174,6 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
 type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
 
 /// Bridge a JS `Unknown` into a `JsFunction`.
-///
-/// In napi 3.14, the `#[napi]`-accepted `Function`/`Unknown` types and the
-/// `JsFunction` type share the identical `NapiValueInner` representation
-/// (an env pointer + a value pointer), but only `JsFunction` exposes
-/// `create_threadsafe_function` with a typed return value. This copy is sound
-/// because the layout is identical; the underlying `napi` handles are cloned
-/// into the new `ThreadsafeFunction`, so dropping the original `Unknown` is safe.
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> JsFunction {
     debug_assert_eq!(
