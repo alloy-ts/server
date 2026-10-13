@@ -86,6 +86,7 @@ pub struct RequestInput {
 
 /// A single HTTP header, used in [`RequestInput`]/[`ResponsePayload`]/[`Response`].
 #[napi(object)]
+#[derive(Clone)]
 pub struct Header {
     pub name: String,
     pub value: String,
@@ -116,12 +117,21 @@ pub struct ResponsePayload {
 #[napi]
 pub struct Response {
     pub status: u32,
-    pub headers: Vec<Header>,
+    headers: Vec<Header>,
     pub body: Option<Vec<u8>>,
 }
 
 #[napi]
 impl Response {
+    #[napi(getter)]
+    pub fn headers(&self) -> Vec<Header> {
+        self.headers.clone()
+    }
+
+    #[napi(setter)]
+    pub fn set_headers(&mut self, headers: Vec<Header>) {
+        self.headers = headers;
+    }
     /// `new Response(body, init)` — `body` may be a `string` (matching the
     /// Bun/Web `Response` shape).
     #[napi(constructor)]
@@ -342,7 +352,7 @@ fn build_response(payload: &ResponsePayload) -> RocketResponse<'static> {
         builder.status(status);
     }
     for h in &payload.headers {
-        builder.header(Header::new(h.name.clone(), h.value.clone()));
+        builder.header(RocketHeader::new(h.name.clone(), h.value.clone()));
     }
     if let Some(body) = &payload.body {
         let bytes = body.clone();
@@ -443,7 +453,7 @@ static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 /// cannot be a `#[napi(object)]` struct field); `options` carries the scalar
 /// config (`port`, `hostname`, `unix`).
 #[napi]
-pub async fn serve(
+pub fn serve(
     routes: Option<Unknown<'_>>,
     fetch: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
@@ -506,8 +516,15 @@ pub async fn serve(
                 *slot.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
-    rocket::tokio::spawn(async move {
-        let _ = rocket.launch().await;
+    std::thread::spawn(move || {
+        if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            rt.block_on(async move {
+                let _ = rocket.launch().await;
+            });
+        }
     });
 
     Ok(Server {

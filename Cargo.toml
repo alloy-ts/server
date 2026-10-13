@@ -13,5 +13,10 @@ napi-derive = "3.6.12"
 rocket = "0.5.1"
 serde_json = "1"
 
+[features]
+default = []
+tls = ["rocket/tls"]
+secrets = ["rocket/secrets"]
+
 [build-dependencies]
 napi-build = "2"
