@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   Alloy,
+  App,
   file,
   registerRoute,
   type RequestInput,
@@ -158,5 +159,34 @@ describe("server NAPI bindings", () => {
     expect(await res.text()).toBe("pong");
 
     server.stop();
+  });
+
+  it("App class routes requests via fluent methods and launches server", async () => {
+    const port = 3014;
+    const app = new App({ port, hostname: "127.0.0.1" });
+
+    app.get("/", async () => response("Hello, world!"));
+    app.post("/items", async (req: RequestInput) => {
+      const text = req.body ? new TextDecoder().decode(Uint8Array.from(req.body)) : "";
+      return responseJson({ received: text });
+    });
+
+    const server = app.launch();
+    expect(server.port).toBe(port);
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const res1 = await fetch(`http://127.0.0.1:${port}/`);
+    expect(res1.status).toBe(200);
+    expect(await res1.text()).toBe("Hello, world!");
+
+    const res2 = await fetch(`http://127.0.0.1:${port}/items`, {
+      method: "POST",
+      body: "data",
+    });
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toEqual({ received: "data" });
+
+    app.stop();
   });
 });
