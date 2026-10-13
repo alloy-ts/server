@@ -56,10 +56,87 @@ export function serve(
   return native.serve(routesOrOptions, fetchFn, options);
 }
 
+export class App {
+  private routesTable: Record<string, unknown> = {};
+  private serverInstance?: native.Server;
+
+  get(path: string, handler: unknown): this {
+    return this.route("GET", path, handler);
+  }
+
+  post(path: string, handler: unknown): this {
+    return this.route("POST", path, handler);
+  }
+
+  put(path: string, handler: unknown): this {
+    return this.route("PUT", path, handler);
+  }
+
+  delete(path: string, handler: unknown): this {
+    return this.route("DELETE", path, handler);
+  }
+
+  patch(path: string, handler: unknown): this {
+    return this.route("PATCH", path, handler);
+  }
+
+  head(path: string, handler: unknown): this {
+    return this.route("HEAD", path, handler);
+  }
+
+  options(path: string, handler: unknown): this {
+    return this.route("OPTIONS", path, handler);
+  }
+
+  route(method: string, path: string, handler: unknown): this {
+    const m = method.toUpperCase();
+    const existing = this.routesTable[path];
+    if (existing && typeof existing === "object" && !(existing instanceof Response)) {
+      (existing as Record<string, unknown>)[m] = handler;
+    } else if (existing) {
+      this.routesTable[path] = {
+        GET: existing,
+        [m]: handler,
+      };
+    } else {
+      this.routesTable[path] = {
+        [m]: handler,
+      };
+    }
+    return this;
+  }
+
+  mount(base: string, routes: Record<string, unknown>): this {
+    const prefix = base === "/" ? "" : base;
+    for (const [path, val] of Object.entries(routes)) {
+      const fullPath = `${prefix}${path.startsWith("/") ? "" : "/"}${path}`;
+      this.routesTable[fullPath] = val;
+    }
+    return this;
+  }
+
+  launch(options?: native.ServeOptions | null): native.Server {
+    this.serverInstance = serve({
+      routes: this.routesTable,
+      port: options?.port,
+      hostname: options?.hostname,
+      unix: options?.unix,
+    });
+    return this.serverInstance;
+  }
+
+  stop(): void {
+    if (this.serverInstance) {
+      this.serverInstance.stop();
+    }
+  }
+}
+
 export const Alloy = {
   serve,
   file: native.file,
   Response,
+  App,
 };
 
 export const Bun = Alloy;

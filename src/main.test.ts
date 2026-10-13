@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
 import {
+  App,
   generateClient,
   generateModule,
   generateTypes,
@@ -9,6 +10,7 @@ import {
   parseRocketRoutePattern,
   parseRoute,
   parseRoutes,
+  response,
   toRocketPath,
   translatePatternToAlloy,
 } from "./main.ts";
@@ -105,4 +107,15 @@ test("generateTypescriptClient produces strongly-typed fetch client SDK", () => 
 
   expect(result.code).toContain("export class UserApiClient");
   expect(result.code).toContain("async getUser(");
+});
+
+test("App registers routes and launches server", () => {
+  const app = new App();
+  app.get("/", async () => response("Hello, world!"));
+  app.post("/users", async () => response("Created", { status: 201 }));
+
+  const server = app.launch({ port: 0 });
+  expect(server.url).toContain("http://");
+
+  app.stop();
 });
