@@ -38,6 +38,7 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
 use napi::{JsFunction, Unknown};
+use napi::bindgen_prelude::Function;
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -50,14 +51,14 @@ use rocket::route::{Handler, Outcome as RouteOutcome, Route};
 use rocket::{Data, Shutdown};
 
 /// Convenience alias for the threadsafe function each JS route handler is
-/// wrapped in. The JS function receives a [`RequestInput`] and must resolve a
-/// [`Promise<Response>`] (i.e. be `async` and return a `Response`).
+/// wrapped in. The JS function receives a [`RequestInput`] and produces a
+/// [`Response`].
 ///
 /// The `create_threadsafe_function` generic order is
 /// `<T, NewArgs, Return, ErrorStatus, F, ES, Weak, MaxQueueSize>`; the closure
 /// returns `NewArgs` (the request), while `Return` is the JS function's
-/// resolved value (`Promise<Response>`, whose `FromNapiValue` awaits the JS
-/// promise for us).
+/// returned value (`Response`, whose `FromNapiValue` handles both async promises
+/// and sync values from JS).
 ///
 /// Two details are load-bearing:
 ///
@@ -74,12 +75,6 @@ type HandlerTsfn =
 /// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
 /// a JS object) into a `napi::JsFunction` so we can call
 /// `create_threadsafe_function`.
-///
-/// `JsFunction` does not implement `FromNapiValue`, so `Unknown::cast` cannot
-/// produce it. The two types share the identical `NapiValueInner` layout (an
-/// env pointer + a value pointer), so a bit-copy is sound: the napi handles are
-/// cloned into the resulting `ThreadsafeFunction`, so dropping the source
-/// `Unknown` is safe.
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> JsFunction {
     debug_assert_eq!(
@@ -87,6 +82,15 @@ fn to_js_function(handler: Unknown) -> JsFunction {
         std::mem::size_of::<JsFunction>()
     );
     unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+}
+
+/// Wrap any JS handler function in `async (...args) => await fn(...args)` so its
+/// return value is guaranteed to be a JS Promise.
+#[allow(deprecated)]
+fn wrap_handler(env: &Env, handler: Unknown) -> napi::Result<JsFunction> {
+    let wrap_creator: Function = env.run_script("(fn) => async (...args) => await fn(...args)")?;
+    let wrapped: Unknown = wrap_creator.call(handler)?;
+    Ok(to_js_function(wrapped))
 }
 
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
@@ -202,8 +206,6 @@ impl Handler for JsHandler {
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
                 let input = build_request(request, data, &pattern).await;
-                // `call_async` resolves to `Promise<Response>`; awaiting that
-                // promise yields the JS `Response` (or a JS error -> 500).
                 let output = match tsfn.call_async(input).await {
                     Ok(promise) => match promise.await {
                         Ok(payload) => payload,
@@ -280,10 +282,19 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
                 .or_else(|| inner.strip_suffix('>'));
             if let Some(name) = name {
                 if name != "_" {
-                    if let Some(v) = a_segs.get(idx) {
+                    if seg.ends_with("..>") {
+                        if idx < a_segs.len() {
+                            let rest = a_segs[idx..].join("/");
+                            params.insert(name.to_string(), rest);
+                        }
+                    } else if let Some(v) = a_segs.get(idx) {
                         params.insert(name.to_string(), (*v).to_string());
                     }
                 }
+            }
+        } else if let Some(name) = seg.strip_prefix(':') {
+            if let Some(v) = a_segs.get(idx) {
+                params.insert(name.to_string(), (*v).to_string());
             }
         }
     }
@@ -358,6 +369,7 @@ const ALL_METHODS: &[Method] = &[
 /// `Response` (has `status`) before treating it as a method map.
 #[allow(deprecated)]
 fn mount_value<'env>(
+    env: &'env Env,
     value: Unknown<'env>,
     pattern: &str,
     methods: &[Method],
@@ -365,7 +377,7 @@ fn mount_value<'env>(
 ) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
+            let f = wrap_handler(env, value)?;
             let tsfn: HandlerTsfn =
                 f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
                     |ctx| Ok(ctx.value),
@@ -397,7 +409,7 @@ fn mount_value<'env>(
                                 format!("invalid method: {method}"),
                             )
                         })?;
-                    mount_value(method_value, pattern, &[m], out)?;
+                    mount_value(env, method_value, pattern, &[m], out)?;
                 }
             }
         }
@@ -410,7 +422,10 @@ fn mount_value<'env>(
 /// Alloy/Bun pattern into Rocket syntax.
 fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<Route>) {
     let handler = JsHandler(Arc::new(kind));
-    let rocket_pattern = translate_pattern(pattern);
+    let mut rocket_pattern = translate_pattern(pattern);
+    if !rocket_pattern.starts_with('/') {
+        rocket_pattern = format!("/{rocket_pattern}");
+    }
     for m in methods {
         out.push(Route::new(*m, &rocket_pattern, handler.clone()));
     }
@@ -431,6 +446,7 @@ static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 /// config (`port`, `hostname`, `unix`).
 #[napi]
 pub fn serve(
+    env: Env,
     routes: Option<Unknown<'_>>,
     fetch: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
@@ -461,20 +477,24 @@ pub fn serve(
         for i in 0..len {
             let pattern: String = names.get_element(i)?;
             let value: Unknown<'_> = table.get_named_property(&pattern)?;
-            mount_value(value, &pattern, ALL_METHODS, &mut out)?;
+            mount_value(&env, value, &pattern, ALL_METHODS, &mut out)?;
         }
     }
 
+    // Mount any routes registered via `register_route`
+    let mut accumulated_routes = get_global_routes().lock().unwrap();
+    out.append(&mut accumulated_routes);
+
     // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = fetch {
-        let f = to_js_function(fetch);
+        let f = wrap_handler(&env, fetch)?;
         let tsfn: HandlerTsfn =
             f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
                 |ctx| Ok(ctx.value),
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            push_kind(RouteKind::Fn(tsfn.clone()), "/<_..>", &[*m], &mut out);
         }
     }
 
@@ -551,18 +571,17 @@ impl Server {
 
 static ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
 
-fn routes() -> &'static Mutex<Vec<Route>> {
+fn get_global_routes() -> &'static Mutex<Vec<Route>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
 ///
-/// The `handler` JS function must return a `Promise<Response>` (i.e. be an
-/// `async` function returning a `Response`). Route definitions accumulate until
-/// [`serve`] is called, which mounts them alongside the `routes` table.
+/// The `handler` JS function must return a `Response` or `Promise<Response>`.
+/// Route definitions accumulate until [`serve`] is called, which mounts them alongside the `routes` table.
 #[napi]
-pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
-    let f = to_js_function(handler);
+pub fn register_route(env: Env, method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+    let f = wrap_handler(&env, handler)?;
     let tsfn: HandlerTsfn =
         f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
             |ctx| Ok(ctx.value),
@@ -570,7 +589,7 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-    let mut routes = routes().lock().unwrap();
+    let mut routes = get_global_routes().lock().unwrap();
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
 }
