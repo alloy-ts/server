@@ -22,7 +22,7 @@ use napi::Status;
 use napi_derive::napi;
 
 use rocket::config::{
-    Config as RocketConfig, Ident, LogLevel, RocketShutdown as RocketShutdownAlias, Sig,
+    Config as RocketConfig, Ident, LogLevel, Shutdown as RocketShutdownAlias, Sig,
 };
 use rocket::data::{ByteUnit, Limits as RocketLimits};
 use rocket::figment::{Profile, value::magic::RelativePathBuf};
@@ -32,7 +32,7 @@ use rocket::http::uncased::Uncased;
 use rocket::config::SecretKey;
 
 #[cfg(feature = "tls")]
-use rocket::config::{CipherSuite, MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
+use rocket::config::{MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
 
 fn err<E: std::fmt::Display>(e: E) -> NapiError {
     NapiError::new(Status::GenericFailure, e.to_string())
@@ -87,6 +87,7 @@ pub const CLI_COLORS: &'static str = "cli_colors";
 /// Each entry maps a data-type name (e.g. `"form"`, `"json"`) to a size
 /// expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
 /// or an SI unit string (`"32KiB"`).
+#[derive(Clone)]
 #[napi(object)]
 pub struct Limits {
     pub limits: HashMap<String, String>,
@@ -97,6 +98,7 @@ pub struct Limits {
 /// All fields are optional so a partial override can be supplied; omitted
 /// fields fall back to Rocket's `Shutdown::default()`. Signal names use
 /// Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
+#[derive(Clone)]
 #[napi(object)]
 pub struct Shutdown {
     pub ctrlc: Option<bool>,
@@ -108,6 +110,7 @@ pub struct Shutdown {
 
 /// Mirrors `rocket::config::TlsConfig`.
 #[cfg(feature = "tls")]
+#[derive(Clone)]
 #[napi(object)]
 pub struct TlsConfig {
     pub certs: String,
@@ -119,6 +122,7 @@ pub struct TlsConfig {
 
 /// Mirrors the `tls.mutual` portion of `rocket::config::TlsConfig`.
 #[cfg(feature = "tls")]
+#[derive(Clone)]
 #[napi(object)]
 pub struct MutualTls {
     pub ca_certs: String,
@@ -177,7 +181,7 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        limits = limits.limit(name, unit);
+        limits = limits.limit(name.clone(), unit);
     }
     Ok(limits)
 }
@@ -192,7 +196,7 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
         for s in sigs {
             parsed.push(parse_sig(s)?);
         }
-        shutdown.signals = parsed;
+        shutdown.signals = parsed.into_iter().collect();
     }
     if let Some(v) = napi.grace {
         shutdown.grace = v;
@@ -447,7 +451,7 @@ impl Config {
     }
     #[napi(setter)]
     pub fn set_ident(&mut self, value: Option<String>) -> napi::Result<()> {
-        parse_ident(value)?;
+        parse_ident(value.clone())?;
         self.ident = value;
         Ok(())
     }
@@ -568,14 +572,12 @@ impl Config {
             limits: Limits {
                 limits: HashMap::new(),
             },
-            temp_dir: cfg.temp_dir.to_string(),
+            temp_dir: cfg.temp_dir.relative().display().to_string(),
             keep_alive: cfg.keep_alive,
             #[cfg(feature = "tls")]
             tls: None,
             #[cfg(feature = "secrets")]
-            secret_key: serde_json::to_value(&cfg.secret_key)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            secret_key: None,
             shutdown: Shutdown {
                 ctrlc: Some(cfg.shutdown.ctrlc),
                 signals: Some(

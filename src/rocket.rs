@@ -110,11 +110,8 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
     let params: HashMap<String, String> = req
         .route()
         .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
+            let pattern = route.uri.to_string();
+            crate::codegen::extract_params(&pattern, &path)
         })
         .unwrap_or_default();
 
