@@ -2,9 +2,9 @@
   "name": "@alloy-ts/server",
   "version": "0.0.0",
   "files": [
-    "dist",
-    "index.js",
-    "index.d.ts"
+    "./dist/index.js",
+    "./dist/index.d.ts",
+    "./dist/*.node"
   ],
   "type": "module",
   "main": "./dist/index.js",
