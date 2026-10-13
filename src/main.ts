@@ -26,5 +26,6 @@ export const responseRedirect = native.responseRedirect;
 export const registerRoute = native.registerRoute;
 export const Codegen = native.Codegen;
 export const parseRoutePattern = native.parseRoutePattern;
+export const Config = native.Config;
 
 export { native };
