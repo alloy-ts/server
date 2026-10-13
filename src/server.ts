@@ -24,6 +24,8 @@ export interface ServeOptions {
   port?: number;
   hostname?: string;
   unix?: string;
+  routes?: Record<string, any>;
+  fetch?: (req: any) => any;
 }
 
 export function file(path: string): any {
@@ -82,7 +84,8 @@ export function serve(routesOrOptions?: any, fetchFn?: any, opts?: ServeOptions)
     (routesOrOptions.routes !== undefined ||
       routesOrOptions.port !== undefined ||
       routesOrOptions.fetch !== undefined ||
-      routesOrOptions.hostname !== undefined)
+      routesOrOptions.hostname !== undefined ||
+      routesOrOptions.unix !== undefined)
   ) {
     const { routes, fetch, ...scalarOpts } = routesOrOptions;
     return native.serve(routes, fetch, scalarOpts);

@@ -293,7 +293,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
 /// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -440,7 +443,13 @@ pub fn serve(
         hostname: None,
         unix: None,
     });
-    let port = options.port.unwrap_or(3000) as u16;
+    let env_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok());
+
+    let port = options.port.map(|p| p as u16).or(env_port).unwrap_or(3000);
     let hostname = options
         .hostname
         .clone()
@@ -451,7 +460,11 @@ pub fn serve(
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
-    let url = format!("http://{}:{}", hostname, port);
+    let url = if let Some(ref unix_path) = options.unix {
+        format!("unix:{}", unix_path)
+    } else {
+        format!("http://{}:{}", hostname, port)
+    };
 
     let mut out: Vec<Route> = Vec::new();
     if let Some(table) = routes {

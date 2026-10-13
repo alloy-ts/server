@@ -173,6 +173,7 @@ export function generateTypescriptInterface(name: string, fields: Record<string,
 
 export const Alloy = {
   serve,
+  file,
   generateUriBuilder: generateTsUriBuilder,
   generateTsUriBuilder,
   parseRocketRoutePattern,
@@ -180,4 +181,9 @@ export const Alloy = {
   generateTypescriptClient,
   parseRouteUri,
   translatePattern,
+};
+
+export const Bun = {
+  serve,
+  file,
 };
