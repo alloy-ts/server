@@ -495,7 +495,12 @@ pub fn serve(
         }
     }
 
-    let port = options.port.unwrap_or(3000) as u16;
+    let env_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|p| p.parse::<u32>().ok());
+    let port = options.port.or(env_port).unwrap_or(3000) as u16;
     let hostname = options
         .hostname
         .clone()
