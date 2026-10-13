@@ -149,7 +149,8 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
     builder.finalize()
 }
 
-type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
+type HandlerTsfn =
+    ThreadsafeFunction<(RequestPayload,), Either<ResponsePayload, Promise<ResponsePayload>>>;
 
 /// Bridge a JS `Unknown` into a `JsFunction`.
 ///
@@ -183,7 +184,11 @@ impl RouteHandler for JsRouteHandler {
     async fn handle<'r>(&self, req: &'r Request<'_>, data: Data<'r>) -> RouteOutcome<'r> {
         let payload = build_request_payload(req, Some(data)).await;
         match self.tsfn.call_async(Ok((payload,))).await {
-            Ok(resp) => RouteOutcome::Success(build_response(resp)),
+            Ok(Either::A(resp)) => RouteOutcome::Success(build_response(resp)),
+            Ok(Either::B(promise)) => match promise.await {
+                Ok(resp) => RouteOutcome::Success(build_response(resp)),
+                Err(_) => RouteOutcome::Error(RocketStatus::InternalServerError),
+            },
             Err(_) => RouteOutcome::Error(RocketStatus::InternalServerError),
         }
     }
@@ -204,7 +209,11 @@ impl catcher::Handler for JsCatcherHandler {
     async fn handle<'r>(&self, _status: RocketStatus, req: &'r Request<'_>) -> catcher::Result<'r> {
         let payload = build_request_payload(req, None).await;
         match self.tsfn.call_async(Ok((payload,))).await {
-            Ok(resp) => Ok(build_response(resp)),
+            Ok(Either::A(resp)) => Ok(build_response(resp)),
+            Ok(Either::B(promise)) => match promise.await {
+                Ok(resp) => Ok(build_response(resp)),
+                Err(_) => Err(RocketStatus::InternalServerError),
+            },
             Err(_) => Err(RocketStatus::InternalServerError),
         }
     }

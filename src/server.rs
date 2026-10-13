@@ -68,8 +68,15 @@ use rocket::{Data, Shutdown};
 ///   hits napi-rs's blanket `JsValuesTupleIntoVec for T: ToNapiValue` impl,
 ///   which converts the tuple into a single JS *array* — the handler would
 ///   receive `[request]` instead of `request`.
-type HandlerTsfn =
-    ThreadsafeFunction<RequestInput, Promise<Response>, RequestInput, Status, false, false, 0>;
+type HandlerTsfn = ThreadsafeFunction<
+    RequestInput,
+    Either<Response, Promise<Response>>,
+    RequestInput,
+    Status,
+    false,
+    false,
+    0,
+>;
 
 /// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
 /// a JS object) into a `napi::JsFunction` so we can call
@@ -202,10 +209,11 @@ impl Handler for JsHandler {
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
                 let input = build_request(request, data, &pattern).await;
-                // `call_async` resolves to `Promise<Response>`; awaiting that
-                // promise yields the JS `Response` (or a JS error -> 500).
+                // `call_async` resolves to Either<Response, Promise<Response>>;
+                // handles both synchronous and asynchronous JS route handlers.
                 let output = match tsfn.call_async(input).await {
-                    Ok(promise) => match promise.await {
+                    Ok(Either::A(payload)) => payload,
+                    Ok(Either::B(promise)) => match promise.await {
                         Ok(payload) => payload,
                         Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
                     },
@@ -293,8 +301,11 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
 /// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
     let mut chars = pattern.chars().peekable();
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     while let Some(c) = chars.next() {
         if c == ':' {
             let mut name = String::new();
@@ -366,8 +377,8 @@ fn mount_value<'env>(
     match value.get_type()? {
         ValueType::Function => {
             let f = to_js_function(value);
-            let tsfn: HandlerTsfn =
-                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+            let tsfn: HandlerTsfn = f
+                .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
                     |ctx| Ok(ctx.value),
                 )?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
@@ -454,6 +465,9 @@ pub fn serve(
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
+    if let Ok(mut reg) = self::routes().lock() {
+        out.append(&mut *reg);
+    }
     if let Some(table) = routes {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
@@ -468,13 +482,13 @@ pub fn serve(
     // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = fetch {
         let f = to_js_function(fetch);
-        let tsfn: HandlerTsfn =
-            f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+        let tsfn: HandlerTsfn = f
+            .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
                 |ctx| Ok(ctx.value),
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            push_kind(RouteKind::Fn(tsfn.clone()), "/<_..>", &[*m], &mut out);
         }
     }
 
@@ -563,8 +577,8 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
     let f = to_js_function(handler);
-    let tsfn: HandlerTsfn =
-        f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+    let tsfn: HandlerTsfn = f
+        .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
             |ctx| Ok(ctx.value),
         )?;
     let m: Method = method
