@@ -1,11 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import {
-  file,
-  registerRoute,
-  serve,
-  response,
-  responseJson,
-} from "../dist/index.js";
+import { file, registerRoute, serve, response, responseJson } from "../dist/index.js";
 
 test("server module exports serve, registerRoute, file, response, responseJson", () => {
   expect(typeof serve).toBe("function");
