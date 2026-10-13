@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
-import { main } from "./main.ts";
+import { Alloy, serve } from "../dist/index.js";
 
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
+test("Alloy and serve functions exist", () => {
+  expect(typeof serve).toBe("function");
+  expect(typeof Alloy.serve).toBe("function");
 });
