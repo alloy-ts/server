@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import {
   Alloy,
+  App,
   buildRouteUri,
   Config,
   file,
@@ -10,6 +11,7 @@ import {
   parseRoutePattern,
   post,
   Response,
+  response,
   uri,
 } from "./main.ts";
 
@@ -24,6 +26,15 @@ test("Response static constructors and getters", () => {
   const redirectResp = Response.redirect("/login", 301);
   expect(redirectResp.status).toBe(301);
   expect(redirectResp.headers).toEqual([["Location", "/login"]]);
+});
+
+test("response helper constructs Response with status", () => {
+  const resp1 = response("Hello, world!");
+  expect(resp1.status).toBe(200);
+
+  const resp2 = response("Created", 201, [["x-type", "test"]]);
+  expect(resp2.status).toBe(201);
+  expect(resp2.headers).toEqual([["x-type", "test"]]);
 });
 
 test("Config default profiles and parameters", () => {
@@ -57,6 +68,18 @@ test("Route registration and metadata", () => {
   const meta = getRegisteredRoutesMeta();
   expect(meta.some((m) => m.path === "/api/health" && m.method === "GET")).toBe(true);
   expect(meta.some((m) => m.path === "/api/data" && m.method === "POST")).toBe(true);
+});
+
+test("App class methods and launch/stop lifecycle", () => {
+  const app = new App();
+  app.get("/hello", async () => response("Hello, world!"));
+  app.post("/data", async () => response("Created", 201));
+
+  const server = app.launch({ port: 0 });
+  expect(server.url).toContain("http://");
+  expect(server.port).toBeGreaterThanOrEqual(0);
+
+  app.stop();
 });
 
 test("Alloy.serve creates server instance", () => {
