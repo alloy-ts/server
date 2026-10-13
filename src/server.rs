@@ -456,7 +456,23 @@ pub fn serve(
         hostname: None,
         unix: None,
     });
-    let port = options.port.unwrap_or(3000) as u16;
+    let port: u16 = if let Some(p) = options.port {
+        if p == 0 {
+            std::net::TcpListener::bind(("127.0.0.1", 0))
+                .and_then(|l| l.local_addr())
+                .map(|addr| addr.port())
+                .unwrap_or(3000)
+        } else {
+            p as u16
+        }
+    } else if let Ok(env_port) = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+    {
+        env_port.parse().unwrap_or(3000)
+    } else {
+        3000
+    };
     let hostname = options
         .hostname
         .clone()

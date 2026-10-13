@@ -27,6 +27,29 @@ test("response helpers create valid response objects", () => {
   expect(staticFile.path).toBe("./assets/index.html");
 });
 
+test("serve allocates a random port when port is 0", async () => {
+  const server = serve(
+    {
+      "/status": () => response("ok"),
+    },
+    null,
+    { port: 0, hostname: "127.0.0.1" },
+  );
+
+  expect(server.port).toBeGreaterThan(0);
+  expect(server.url).toBe(`http://127.0.0.1:${server.port}`);
+
+  await new Promise((r) => setTimeout(r, 150));
+
+  try {
+    const res = await fetch(`${server.url}/status`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+  } finally {
+    server.stop();
+  }
+});
+
 test("serve starts Rocket web server and handles routes, params, JSON, redirects, static files and fetch fallback", async () => {
   // Register a route using low-level registerRoute
   registerRoute("GET", "/registered", () => response("from registered route"));
