@@ -13,5 +13,13 @@ napi-derive = "3.6.12"
 rocket = "0.5.1"
 serde_json = "1"
 
+[features]
+default = ["tls", "secrets"]
+# `config.rs` gates `TlsConfig`/`MutualTls`/`tlsEnabled` behind `feature = "tls"`
+# and `secret_key` behind `feature = "secrets"`. These names must match the
+# `#[cfg(...)]` attributes in `src/config.rs`.
+tls = ["rocket/tls", "rocket/mtls"]
+secrets = ["rocket/secrets"]
+
 [build-dependencies]
 napi-build = "2"
