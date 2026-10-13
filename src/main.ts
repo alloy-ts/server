@@ -9,6 +9,7 @@ export const Alloy = {
   responseJson: native.responseJson,
   responseRedirect: native.responseRedirect,
   registerRoute: native.registerRoute,
+  Config: native.Config,
 };
 
 export default Alloy;
