@@ -1,6 +1,108 @@
 import { expect, test } from "vite-plus/test";
-import { main } from "./main.ts";
+import {
+  generateClient,
+  generateModule,
+  generateTypes,
+  generateTypescriptClient,
+  httpMethods,
+  main,
+  parseRocketRoutePattern,
+  parseRoute,
+  parseRoutes,
+  toRocketPath,
+  translatePatternToAlloy,
+} from "./main.ts";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
+});
+
+test("httpMethods returns supported Rocket HTTP methods", () => {
+  const methods = httpMethods();
+  expect(methods).toContain("GET");
+  expect(methods).toContain("POST");
+  expect(methods).toContain("DELETE");
+});
+
+test("parseRocketRoutePattern extracts dynamic path and query parameters", () => {
+  const params = parseRocketRoutePattern("/users/<id>?<age>&<name..>");
+  expect(params).toHaveLength(3);
+
+  expect(params[0]).toEqual({
+    name: "id",
+    paramType: "string",
+    isPath: true,
+    isQuery: false,
+    isOptional: false,
+  });
+
+  expect(params[1]).toEqual({
+    name: "age",
+    paramType: "string",
+    isPath: false,
+    isQuery: true,
+    isOptional: false,
+  });
+
+  expect(params[2]).toEqual({
+    name: "name",
+    paramType: "string",
+    isPath: false,
+    isQuery: true,
+    isOptional: true,
+  });
+});
+
+test("translatePatternToAlloy converts Rocket path to Alloy syntax", () => {
+  expect(translatePatternToAlloy("/users/<id>/<rest..>")).toBe("/users/:id/*");
+  expect(toRocketPath("/users/:id/*")).toBe("/users/<id>/<_..>");
+});
+
+test("parseRoute and parseRoutes generate resolved route definitions", () => {
+  const route = parseRoute({
+    method: "GET",
+    path: "/users/:id",
+    response: "User",
+  });
+  expect(route.method).toBe("GET");
+  expect(route.path).toBe("/users/:id");
+  expect(route.name).toBe("getUsersById");
+
+  const routes = parseRoutes([
+    { method: "GET", path: "/users/:id", response: "User" },
+    { method: "POST", path: "/users", body: "CreateUser", response: "User" },
+  ]);
+  expect(routes).toHaveLength(2);
+});
+
+test("generateTypes and generateModule produce valid TypeScript output", () => {
+  const routes = parseRoutes([{ method: "GET", path: "/users/:id", response: "User" }]);
+
+  const typesOutput = generateTypes(routes);
+  expect(typesOutput).toContain("export interface RouteTypes");
+  expect(typesOutput).toContain('"GET /users/:id":');
+
+  const moduleOutput = generateModule(routes);
+  expect(moduleOutput).toContain("export const ROUTES =");
+  expect(moduleOutput).toContain("export class RocketClient");
+
+  const clientOutput = generateClient(routes);
+  expect(clientOutput).toContain("export class RocketClient");
+});
+
+test("generateTypescriptClient produces strongly-typed fetch client SDK", () => {
+  const result = generateTypescriptClient(
+    [
+      {
+        method: "GET",
+        path: "/users/<id>",
+        name: "getUser",
+        returnType: "Promise<{ id: string; name: string }>",
+      },
+    ],
+    { clientName: "UserApiClient" },
+  );
+
+  expect(result.code).toContain("export class UserApiClient");
+  expect(result.code).toContain("async getUser(");
 });
