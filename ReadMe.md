@@ -1,45 +1,57 @@
-# Server
+# @alloy-ts/server
 
 Node.js (TypeScript) NAPI bindings for the Rocket web framework and code generation utilities.
 
 ## Features
 
-- **High-performance HTTP server (`Alloy.serve` / `serve`)**: Bun/Alloy-style routing backed by Rocket.
+- **High-performance HTTP server (`serve`)**: Bun/Alloy-style routing backed by Rocket.
 - **Rocket Server Lifecycle (`Rocket`)**: Direct programmatic control over mounting routes, registering catchers, ignition, and graceful shutdown.
-- **Rocket Configuration (`Config`)**: Full mirror of Rocket's server configuration (`Config.debugDefault()`, `Config.tryFrom()`, limits, shutdown signals, log levels).
 - **TypeScript Code Generation (`codegen`)**:
-  - `parseRocketRoutePattern`: Extract dynamic path/query parameters from Rocket route strings.
-  - `translatePatternToAlloy`: Translate Rocket route syntax (`/users/<id>`) into Alloy/Bun route syntax (`/users/:id`).
-  - `generateTypescriptClient`: Generate a strongly-typed fetch client SDK for Rocket route specifications.
-  - `generateRouteHandler`: Generate TypeScript route handler boilerplate.
-  - `generateTypescriptInterface`: Convert Rust struct/enum field definitions into TypeScript interfaces.
+  - `parseRoute` / `parseRoutes`: Resolve route patterns into `RouteDef` structures with path/query parameters.
+  - `toRocketPath`: Translate route patterns (`/users/:id/*`) into Rocket route syntax (`/users/<id>/<_..>`).
+  - `generateTypes`: Generate TypeScript route maps, type aliases (`ParamsOf`, `QueryOf`, `BodyOf`, `ResponseOf`), and handler interfaces.
+  - `generateClient`: Generate a strongly-typed `fetch` client SDK with Rocket's `uri!` runtime builder.
+  - `generateModule`: Generate a complete TypeScript module combining route constants, types, `uri()` helper, and client SDK.
 
 ---
 
 ## Quick Start
 
-### Basic Server (`Alloy.serve`)
+### Basic Server (`serve`)
 
 ```ts
-import { serve, Response, file } from "@alloy-ts/server";
+import { serve, response, responseJson, file } from "@alloy-ts/server";
 
 const server = serve({
-  port: 3000,
   routes: {
-    "/api/status": new Response("OK"),
-    "/users/:id": (req) => new Response(`Hello ${req.params?.id}`),
+    "/api/status": response("OK"),
+    "/users/:id": (req) => response(`Hello ${req.params?.id}`),
     "/api/posts": {
-      GET: () => new Response("List posts"),
-      POST: async (req) => Response.json({ created: true }),
+      GET: () => response("List posts"),
+      POST: async () => responseJson({ created: true }),
     },
     "/favicon.ico": file("./favicon.ico"),
   },
-  fetch(req) {
-    return new Response("Not Found", { status: 404 });
+  fetch() {
+    return response("Not Found", { status: 404 });
   },
 });
 
 console.log(`Server running at ${server.url}`);
+```
+
+### Rocket Lifecycle (`Rocket`)
+
+```ts
+import { Rocket } from "@alloy-ts/server";
+
+const rocket = new Rocket({ port: 8000 });
+
+rocket.mount("/", "GET", "/hello", async (req) => {
+  return { status: 200, body: Buffer.from("Hello from Rocket!") };
+});
+
+await rocket.launch();
 ```
 
 ---
@@ -49,41 +61,45 @@ console.log(`Server running at ${server.url}`);
 ### Route Pattern Parsing & Translation
 
 ```ts
-import { parseRocketRoutePattern, translatePatternToAlloy } from "@alloy-ts/server";
+import { parseRoute, toRocketPath } from "@alloy-ts/server";
 
-const params = parseRocketRoutePattern("/users/<id>?<age>&<name..>");
-// Extracted parameters:
-// [
-//   { name: "id", paramType: "string", isPath: true, isQuery: false, isOptional: false },
-//   { name: "age", paramType: "string", isPath: false, isQuery: true, isOptional: false },
-//   { name: "name", paramType: "string", isPath: false, isQuery: true, isOptional: true }
-// ]
+const route = parseRoute({
+  method: "GET",
+  path: "/users/:id/posts/*?<q>",
+});
 
-const alloyPattern = translatePatternToAlloy("/users/<id>/<rest..>");
-// "/users/:id/*"
+console.log(route.rocketPath); // "/users/<id>/posts/<_..>"
+console.log(route.name); // "getUsersByIdPosts"
+
+const rocketPattern = toRocketPath("/users/:id/*");
+// "/users/<id>/<_..>"
 ```
 
-### TypeScript Client SDK Generation
+### TypeScript Client SDK & Types Generation
 
 ```ts
-import { generateTypescriptClient } from "@alloy-ts/server";
+import { parseRoutes, generateModule } from "@alloy-ts/server";
 
-const result = generateTypescriptClient(
-  [
-    {
-      method: "GET",
-      path: "/users/<id>",
-      name: "getUser",
-      params: [
-        { name: "id", paramType: "string", isPath: true, isQuery: false, isOptional: false },
-      ],
-      returnType: "Promise<{ id: string; name: string }>",
-    },
-  ],
-  { clientName: "UserApiClient" },
-);
+const routes = parseRoutes([
+  {
+    method: "GET",
+    path: "/users/:id?<active>",
+    response: "User",
+  },
+  {
+    method: "POST",
+    path: "/users",
+    body: "CreateUser",
+    response: "User",
+  },
+]);
 
-console.log(result.code);
+const code = generateModule(routes, {
+  clientName: "UserApiClient",
+  baseUrl: "http://localhost:3000",
+});
+
+console.log(code);
 ```
 
 ---
