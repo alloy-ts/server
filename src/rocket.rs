@@ -18,10 +18,6 @@
 //! are bridged into Rocket via [`rocket::route::Handler`] / [`rocket::catcher::Handler`]
 //! implementations that call a JS callback through a
 //! [`napi::threadsafe_function::ThreadsafeFunction`].
-//!
-//! Note: a JS function can only be received as a *direct* `#[napi]` parameter
-//! (not nested in an object), so routes/catchers are mounted one handler at a
-//! time via [`Rocket::mount`] / [`Rocket::register`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -57,8 +53,7 @@ pub struct RequestPayload {
     pub headers: Vec<JsHeader>,
     /// Path parameters extracted from the route pattern (e.g. `req.params.id`).
     pub params: Option<HashMap<String, String>>,
-    /// Raw request body, or `undefined` when the request carries no body (e.g.
-    /// during error handling where Rocket does not provide one).
+    /// Raw request body, or `undefined` when the request carries no body.
     pub body: Option<Buffer>,
 }
 
@@ -76,8 +71,39 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
-/// Build a `RequestPayload` from a Rocket request. The body is read fully when
-/// `data` is supplied; catchers receive `None` and produce no body.
+/// Align a Rocket route pattern's `<param>` segments with the actual request
+/// path segments to populate `req.params`.
+fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
+    let path_pattern = pattern.split('?').next().unwrap_or(pattern);
+    let p_segs: Vec<&str> = path_pattern
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let a_segs: Vec<&str> = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut params = HashMap::new();
+    for (idx, seg) in p_segs.iter().enumerate() {
+        if let Some(inner) = seg.strip_prefix('<') {
+            let name = inner
+                .strip_suffix("..>")
+                .or_else(|| inner.strip_suffix('>'));
+            if let Some(name) = name {
+                if name != "_" {
+                    if let Some(v) = a_segs.get(idx) {
+                        params.insert(name.to_string(), (*v).to_string());
+                    }
+                }
+            }
+        }
+    }
+    params
+}
+
+/// Build a `RequestPayload` from a Rocket request.
 pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
     let uri = req.uri();
     let method = req.method().as_str().to_string();
@@ -107,16 +133,8 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
         None => None,
     };
 
-    let params: HashMap<String, String> = req
-        .route()
-        .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
+    let pattern = req.route().map(|r| r.uri.to_string()).unwrap_or_default();
+    let params = extract_params(&pattern, &path);
 
     RequestPayload {
         method,
@@ -151,14 +169,6 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
 
 type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
 
-/// Bridge a JS `Unknown` into a `JsFunction`.
-///
-/// In napi 3.14, the `#[napi]`-accepted `Function`/`Unknown` types and the
-/// `JsFunction` type share the identical `NapiValueInner` representation
-/// (an env pointer + a value pointer), but only `JsFunction` exposes
-/// `create_threadsafe_function` with a typed return value. This copy is sound
-/// because the layout is identical; the underlying `napi` handles are cloned
-/// into the new `ThreadsafeFunction`, so dropping the original `Unknown` is safe.
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> JsFunction {
     debug_assert_eq!(
@@ -222,7 +232,6 @@ pub struct ShutdownOptions {
 }
 
 /// Rocket configuration, mirroring `rocket::Config` (a `Figment` provider).
-/// Any field left unset falls back to Rocket's defaults.
 #[napi(object)]
 pub struct RocketConfig {
     pub address: Option<String>,
@@ -293,9 +302,6 @@ impl Rocket {
     }
 
     /// Mount a single `handler` for `method` at `path` under `base`.
-    /// Equivalent to `rocket.mount(base, vec![Route::new(method, path, handler)])`.
-    ///
-    /// `handler` is `(err: null, req: RequestPayload) => ResponsePayload | Promise<ResponsePayload>`.
     #[napi]
     #[allow(deprecated)]
     pub fn mount(&self, base: String, method: String, path: String, handler: Unknown) -> Result<()> {
@@ -313,9 +319,7 @@ impl Rocket {
         Ok(())
     }
 
-    /// Register a single catcher `handler`. `code` is the HTTP status it handles
-    /// (in `[400, 600)`); pass `None` for the default catcher.
-    /// Equivalent to `rocket.register(base, vec![Catcher::new(code, handler)])`.
+    /// Register a single catcher `handler`.
     #[napi]
     #[allow(deprecated)]
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
@@ -332,15 +336,6 @@ impl Rocket {
     }
 
     /// Ignite and launch this server, resolving when the server shuts down.
-    ///
-    /// This mirrors the generated `main` from `#[launch]`:
-    ///
-    /// ```rust,no_run
-    /// #[rocket::main]
-    /// async fn main() {
-    ///     let _ = rocket().launch().await;
-    /// }
-    /// ```
     #[napi]
     pub async fn launch(&self) -> Result<()> {
         let rocket = {
@@ -374,8 +369,7 @@ impl Rocket {
     }
 }
 
-/// Convenience mirror of `#[launch]`: build (with optional config), ignite,
-/// launch, and resolve once the server shuts down.
+/// Convenience mirror of `#[launch]`: build (with optional config), ignite, launch.
 #[napi]
 pub async fn launch(config: Option<RocketConfig>) -> Result<()> {
     Rocket::new(config)?.launch().await
