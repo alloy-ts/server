@@ -627,7 +627,7 @@ impl Alloy {
         Alloy
     }
 
-    #[napi(factory)]
+    #[napi]
     pub fn serve(
         env: Env,
         routes_or_options: Option<Unknown<'_>>,
@@ -635,6 +635,93 @@ impl Alloy {
         options: Option<ServeOptions>,
     ) -> napi::Result<Server> {
         serve(env, routes_or_options, fetch, options)
+    }
+
+    #[napi]
+    pub fn file(path: String) -> StaticFile {
+        file(path)
+    }
+}
+
+/// Rocket application builder mirroring `rocket::build()`.
+#[napi]
+#[derive(Default)]
+pub struct App {
+    server_handle: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        App {
+            server_handle: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    pub fn route(
+        &self,
+        env: Env,
+        method: String,
+        path: String,
+        handler: Unknown<'_>,
+    ) -> napi::Result<()> {
+        register_route(env, method, path, handler)
+    }
+
+    #[napi]
+    pub fn get(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn head(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "HEAD".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn options(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.route(env, "OPTIONS".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn launch(&self, env: Env, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let s = serve(env, None, None, options)?;
+        *self.server_handle.lock().unwrap() = Some(Server {
+            url: s.url.clone(),
+            port: s.port,
+            shutdown_slot: s.shutdown_slot.clone(),
+        });
+        Ok(s)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(srv) = self.server_handle.lock().unwrap().as_ref() {
+            srv.stop()?;
+        }
+        Ok(())
     }
 }
 
