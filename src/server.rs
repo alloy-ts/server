@@ -29,6 +29,8 @@
 //! `Response.json(data)` / `Response.redirect(url)` ergonomics available to the
 //! TS glue layer.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr};
@@ -202,16 +204,15 @@ impl Handler for JsHandler {
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
                 let input = build_request(request, data, &pattern).await;
-                // `call_async` resolves to `Promise<Response>`; awaiting that
-                // promise yields the JS `Response` (or a JS error -> 500).
-                let output = match tsfn.call_async(input).await {
-                    Ok(promise) => match promise.await {
-                        Ok(payload) => payload,
-                        Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
-                    },
+                let promise = match tsfn.call_async(input).await {
+                    Ok(p) => p,
                     Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
                 };
-                RouteOutcome::Success(build_response(&output))
+                let resp = match promise.await {
+                    Ok(r) => r,
+                    Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
+                };
+                RouteOutcome::Success(build_response(&resp))
             }
             RouteKind::Static(payload) => RouteOutcome::Success(build_response(payload.as_ref())),
             RouteKind::File { path } => match rocket::tokio::fs::read(path).await {
@@ -225,6 +226,7 @@ impl Handler for JsHandler {
         }
     }
 }
+
 
 /// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
 /// including any `:param` / `<param>` path segments.
@@ -274,11 +276,12 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
-            // `<_..>` catch-all -> skip; `<name>` or `<name..>` -> capture.
-            let name = inner
-                .strip_suffix("..>")
-                .or_else(|| inner.strip_suffix('>'));
-            if let Some(name) = name {
+            if let Some(name) = inner.strip_suffix("..>") {
+                if name != "_" && idx < a_segs.len() {
+                    let val = a_segs[idx..].join("/");
+                    params.insert(name.to_string(), val);
+                }
+            } else if let Some(name) = inner.strip_suffix('>') {
                 if name != "_" {
                     if let Some(v) = a_segs.get(idx) {
                         params.insert(name.to_string(), (*v).to_string());
@@ -293,7 +296,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
 /// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -416,11 +422,6 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-/// Shared shutdown handle, filled by the launch fairing and drained by
-/// [`Server::stop`].
-type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
-static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
-
 /// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
 /// launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
 /// route, spawns it on the tokio runtime, and returns a [`Server`] handle
@@ -454,6 +455,13 @@ pub fn serve(
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
+
+    // Include any routes previously registered via `register_route`.
+    {
+        let mut reg_routes = global_routes().lock().unwrap();
+        out.append(&mut reg_routes);
+    }
+
     if let Some(table) = routes {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
@@ -474,7 +482,7 @@ pub fn serve(
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            push_kind(RouteKind::Fn(tsfn.clone()), "/<_..>", &[*m], &mut out);
         }
     }
 
@@ -482,15 +490,15 @@ pub fn serve(
     config.port = port;
     config.address = address;
 
-    let slot: ShutdownSlot = Arc::new(Mutex::new(None));
-    SHUTDOWN.get_or_init(|| slot.clone());
+    let slot: Arc<Mutex<Option<Shutdown>>> = Arc::new(Mutex::new(None));
+    let slot_clone = slot.clone();
 
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
             Box::pin(async move {
-                *slot.lock().unwrap() = Some(orbit.shutdown());
+                *slot_clone.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
     // Run the server on its own dedicated tokio runtime in a background thread.
@@ -512,6 +520,7 @@ pub fn serve(
     Ok(Server {
         url,
         port: port as u32,
+        shutdown: slot,
     })
 }
 
@@ -528,6 +537,7 @@ pub struct ServeOptions {
 pub struct Server {
     pub url: String,
     pub port: u32,
+    shutdown: Arc<Mutex<Option<Shutdown>>>,
 }
 
 #[napi]
@@ -535,10 +545,8 @@ impl Server {
     /// Gracefully stop the server (waits for in-flight requests).
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(slot) = SHUTDOWN.get() {
-            if let Some(shutdown) = slot.lock().unwrap().take() {
-                shutdown.notify();
-            }
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
         }
         Ok(())
     }
@@ -549,10 +557,10 @@ impl Server {
 // builds routes one-at-a-time before booting.
 // ---------------------------------------------------------------------------
 
-static ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
+static GLOBAL_ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
 
-fn routes() -> &'static Mutex<Vec<Route>> {
-    ROUTES.get_or_init(|| Mutex::new(Vec::new()))
+fn global_routes() -> &'static Mutex<Vec<Route>> {
+    GLOBAL_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
@@ -570,7 +578,7 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-    let mut routes = routes().lock().unwrap();
+    let mut routes = global_routes().lock().unwrap();
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
 }
