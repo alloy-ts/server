@@ -77,12 +77,14 @@ const registeredDecoratedRoutes: Array<{ method: string; path: string; handler: 
 
 function createRouteDecorator(method: string) {
   return function (path: string) {
-    return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
-      const handler = descriptor.value;
+    return function (originalMethod: any, context: ClassMethodDecoratorContext) {
+      const handler = originalMethod;
+      void context;
       registeredDecoratedRoutes.push({ method, path, handler });
       if (native.registerRoute) {
         native.registerRoute(method, path, handler);
       }
+      return originalMethod;
     };
   };
 }
@@ -94,13 +96,14 @@ export const del = createRouteDecorator("DELETE");
 export const patch = createRouteDecorator("PATCH");
 
 export function catchError(status: number | string) {
-  return function (_target: any, _propertyKey: string, _descriptor: PropertyDescriptor) {
+  return function (originalMethod: any, _context: ClassMethodDecoratorContext) {
     const parsedStatus =
       typeof status === "number"
         ? status
         : native.parseCatcherStatus
           ? native.parseCatcherStatus(status)
           : null;
-    return parsedStatus;
+    void parsedStatus;
+    return originalMethod;
   };
 }
