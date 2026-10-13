@@ -5,7 +5,12 @@ edition = "2021"
 autobins = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+tls = ["rocket/tls"]
+secrets = ["rocket/secrets"]
 
 [dependencies]
 napi = { version = "3.14.2", features = ["tokio_rt", "napi4", "compat-mode", "serde-json"] }
