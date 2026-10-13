@@ -421,60 +421,113 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
 type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
 static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
-/// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
+fn resolve_port(port_opt: Option<u32>) -> u16 {
+    if let Some(p) = port_opt {
+        p as u16
+    } else if let Ok(p) = std::env::var("BUN_PORT") {
+        p.parse().unwrap_or(3000)
+    } else if let Ok(p) = std::env::var("PORT") {
+        p.parse().unwrap_or(3000)
+    } else if let Ok(p) = std::env::var("NODE_PORT") {
+        p.parse().unwrap_or(3000)
+    } else {
+        3000
+    }
+}
+
+/// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname, unix })` + the
 /// launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
 /// route, spawns it on the tokio runtime, and returns a [`Server`] handle
 /// immediately (mirroring Bun's synchronous `serve` return).
 ///
-/// `routes` and `fetch` are taken as direct parameters (a JS object / function
-/// cannot be a `#[napi(object)]` struct field); `options` carries the scalar
-/// config (`port`, `hostname`, `unix`).
+/// Supports both single-argument options object `Alloy.serve({ routes, fetch, ... })`
+/// and positional arguments `serve(routes, fetch, options)`.
 #[napi]
 pub fn serve(
     routes: Option<Unknown<'_>>,
     fetch: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
 ) -> napi::Result<Server> {
-    let options = options.unwrap_or_else(|| ServeOptions {
-        port: None,
-        hostname: None,
-        unix: None,
-    });
-    let port = options.port.unwrap_or(3000) as u16;
-    let hostname = options
-        .hostname
-        .clone()
-        .unwrap_or_else(|| "0.0.0.0".to_string());
+    let mut route_table: Option<Unknown<'_>> = routes;
+    let mut fetch_fn: Option<Unknown<'_>> = fetch;
+    let mut port_opt: Option<u32> = options.as_ref().and_then(|o| o.port);
+    let mut hostname_opt: Option<String> = options.as_ref().and_then(|o| o.hostname.clone());
+    let mut unix_opt: Option<String> = options.as_ref().and_then(|o| o.unix.clone());
+
+    // Single-argument options object check: `Alloy.serve({ routes: {...}, fetch: ..., port: 8080 })`
+    if fetch_fn.is_none() && options.is_none() {
+        if let Some(ref arg) = route_table {
+            if arg.get_type()? == ValueType::Object {
+                let obj: Object = unsafe { arg.clone().cast()? };
+                if obj.has_named_property("routes")? || obj.has_named_property("fetch")? || obj.has_named_property("port")? || obj.has_named_property("unix")? {
+                    if obj.has_named_property("routes")? {
+                        route_table = Some(obj.get_named_property("routes")?);
+                    } else {
+                        route_table = None;
+                    }
+                    if obj.has_named_property("fetch")? {
+                        fetch_fn = Some(obj.get_named_property("fetch")?);
+                    }
+                    if obj.has_named_property("port")? {
+                        let p: Option<u32> = obj.get_named_property("port")?;
+                        if p.is_some() { port_opt = p; }
+                    }
+                    if obj.has_named_property("hostname")? {
+                        let h: Option<String> = obj.get_named_property("hostname")?;
+                        if h.is_some() { hostname_opt = h; }
+                    }
+                    if obj.has_named_property("unix")? {
+                        let u: Option<String> = obj.get_named_property("unix")?;
+                        if u.is_some() { unix_opt = u; }
+                    }
+                }
+            }
+        }
+    }
+
+    let port = resolve_port(port_opt);
+    let hostname = hostname_opt.unwrap_or_else(|| "0.0.0.0".to_string());
     let address: IpAddr = match hostname.as_str() {
         "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
         other => other
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
-    let url = format!("http://{}:{}", hostname, port);
+
+    let url = if let Some(ref socket_path) = unix_opt {
+        format!("unix://{}", socket_path)
+    } else if hostname == "0.0.0.0" || hostname == "127.0.0.1" || hostname == "localhost" {
+        format!("http://localhost:{}", port)
+    } else {
+        format!("http://{}:{}", hostname, port)
+    };
 
     let mut out: Vec<Route> = Vec::new();
-    if let Some(table) = routes {
-        let table: Object = unsafe { table.cast()? };
-        let names = table.get_property_names()?;
-        let len = names.get_array_length_unchecked()?;
-        for i in 0..len {
-            let pattern: String = names.get_element(i)?;
-            let value: Unknown<'_> = table.get_named_property(&pattern)?;
-            mount_value(value, &pattern, ALL_METHODS, &mut out)?;
+    if let Some(table) = route_table {
+        if table.get_type()? == ValueType::Object {
+            let table_obj: Object = unsafe { table.cast()? };
+            let names = table_obj.get_property_names()?;
+            let len = names.get_array_length_unchecked()?;
+            for i in 0..len {
+                let pattern: String = names.get_element(i)?;
+                let value: Unknown<'_> = table_obj.get_named_property(&pattern)?;
+                mount_value(value, &pattern, ALL_METHODS, &mut out)?;
+            }
         }
     }
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
-    if let Some(fetch) = fetch {
-        let f = to_js_function(fetch);
-        let tsfn: HandlerTsfn =
-            f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
-                |ctx| Ok(ctx.value),
-            )?;
-        let tsfn = Arc::new(tsfn);
-        for m in ALL_METHODS {
-            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+    if let Some(fetch) = fetch_fn {
+        if fetch.get_type()? == ValueType::Function {
+            let f = to_js_function(fetch);
+            let tsfn: HandlerTsfn =
+                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+                    |ctx| Ok(ctx.value),
+                )?;
+            let tsfn = Arc::new(tsfn);
+            for m in ALL_METHODS {
+                push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+            }
         }
     }
 

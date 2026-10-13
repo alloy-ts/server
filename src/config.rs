@@ -22,7 +22,7 @@ use napi::Status;
 use napi_derive::napi;
 
 use rocket::config::{
-    Config as RocketConfig, Ident, LogLevel, RocketShutdown as RocketShutdownAlias, Sig,
+    Config as RocketConfig, Ident, LogLevel, Shutdown as RocketShutdownAlias, Sig,
 };
 use rocket::data::{ByteUnit, Limits as RocketLimits};
 use rocket::figment::{Profile, value::magic::RelativePathBuf};
@@ -32,7 +32,7 @@ use rocket::http::uncased::Uncased;
 use rocket::config::SecretKey;
 
 #[cfg(feature = "tls")]
-use rocket::config::{CipherSuite, MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
+use rocket::config::{MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
 
 fn err<E: std::fmt::Display>(e: E) -> NapiError {
     NapiError::new(Status::GenericFailure, e.to_string())
@@ -88,6 +88,7 @@ pub const CLI_COLORS: &'static str = "cli_colors";
 /// expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
 /// or an SI unit string (`"32KiB"`).
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Limits {
     pub limits: HashMap<String, String>,
 }
@@ -98,6 +99,7 @@ pub struct Limits {
 /// fields fall back to Rocket's `Shutdown::default()`. Signal names use
 /// Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Shutdown {
     pub ctrlc: Option<bool>,
     pub signals: Option<Vec<String>>,
@@ -109,6 +111,7 @@ pub struct Shutdown {
 /// Mirrors `rocket::config::TlsConfig`.
 #[cfg(feature = "tls")]
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct TlsConfig {
     pub certs: String,
     pub key: String,
@@ -120,6 +123,7 @@ pub struct TlsConfig {
 /// Mirrors the `tls.mutual` portion of `rocket::config::TlsConfig`.
 #[cfg(feature = "tls")]
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct MutualTls {
     pub ca_certs: String,
     pub mandatory: Option<bool>,
@@ -177,7 +181,7 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        limits = limits.limit(name, unit);
+        limits = limits.limit(Uncased::from(name.clone()), unit);
     }
     Ok(limits)
 }
@@ -188,9 +192,9 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
         shutdown.ctrlc = v;
     }
     if let Some(sigs) = &napi.signals {
-        let mut parsed = Vec::with_capacity(sigs.len());
+        let mut parsed = std::collections::HashSet::with_capacity(sigs.len());
         for s in sigs {
-            parsed.push(parse_sig(s)?);
+            parsed.insert(parse_sig(s)?);
         }
         shutdown.signals = parsed;
     }
@@ -356,7 +360,7 @@ impl Config {
         cfg.ident = parse_ident(self.ident.clone())?;
         cfg.ip_header = self.ip_header.clone().map(Uncased::from);
         cfg.limits = build_limits(&self.limits)?;
-        cfg.temp_dir = RelativePathBuf::from(self.temp_dir.clone());
+        cfg.temp_dir = RelativePathBuf::from(std::path::PathBuf::from(self.temp_dir.clone()));
         cfg.keep_alive = self.keep_alive;
         cfg.shutdown = build_shutdown(&self.shutdown)?;
         cfg.log_level = parse_log_level(&self.log_level)?;
@@ -447,7 +451,7 @@ impl Config {
     }
     #[napi(setter)]
     pub fn set_ident(&mut self, value: Option<String>) -> napi::Result<()> {
-        parse_ident(value)?;
+        parse_ident(value.clone())?;
         self.ident = value;
         Ok(())
     }
@@ -568,14 +572,12 @@ impl Config {
             limits: Limits {
                 limits: HashMap::new(),
             },
-            temp_dir: cfg.temp_dir.to_string(),
+            temp_dir: cfg.temp_dir.relative().display().to_string(),
             keep_alive: cfg.keep_alive,
             #[cfg(feature = "tls")]
             tls: None,
             #[cfg(feature = "secrets")]
-            secret_key: serde_json::to_value(&cfg.secret_key)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            secret_key: None,
             shutdown: Shutdown {
                 ctrlc: Some(cfg.shutdown.ctrlc),
                 signals: Some(
