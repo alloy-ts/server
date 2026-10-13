@@ -27,8 +27,9 @@ use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Mutex, OnceLock};
 
-use napi::bindgen_prelude::{Buffer, JsFunction, Object, Status};
+use napi::bindgen_prelude::{Buffer, JsFunction, Status};
 use napi::threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction};
+use napi::JsObject;
 use napi::JsUnknown;
 use napi::Promise;
 use napi::ValueType;
@@ -341,7 +342,7 @@ fn collect_routes(value: JsUnknown) -> napi::Result<Vec<(Option<String>, RouteHa
                 return Ok(vec![(None, RouteHandler::Static(resp))]);
             }
             // Otherwise it's a per-method map: `{ GET, POST, ... }`.
-            let obj: Object = unsafe { value.cast() }?;
+            let obj: JsObject = unsafe { value.cast() }?;
             let names = obj.get_property_names()?;
             let len = names.get_array_length()?;
             let mut out = Vec::new();
