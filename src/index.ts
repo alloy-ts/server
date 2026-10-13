@@ -1,4 +1,9 @@
-export * from "../dist/index.js";
+export interface AppOptions {
+  port?: number;
+  hostname?: string;
+  unix?: string;
+  fetch?: (req: unknown) => unknown;
+}
 
 import {
   file,
@@ -77,6 +82,77 @@ export function serve(routes?: unknown, fetch?: unknown, options?: unknown) {
   return nativeServe(wrapRoutes(routes), wrapFetch(fetch), options as ServeOptions | undefined);
 }
 
+/**
+ * High-level builder and application launcher mirroring Rocket's `rocket::build()`.
+ */
+export class App {
+  private routesTable: Record<string, unknown> = {};
+  private activeServer: ReturnType<typeof serve> | null = null;
+
+  private addRoute(method: string, path: string, handler: unknown): this {
+    const current = this.routesTable[path];
+    if (current && typeof current === "object" && !("status" in current) && !("path" in current)) {
+      (current as Record<string, unknown>)[method.toUpperCase()] = handler;
+    } else {
+      this.routesTable[path] = { [method.toUpperCase()]: handler };
+    }
+    return this;
+  }
+
+  get(path: string, handler: unknown): this {
+    return this.addRoute("GET", path, handler);
+  }
+
+  post(path: string, handler: unknown): this {
+    return this.addRoute("POST", path, handler);
+  }
+
+  put(path: string, handler: unknown): this {
+    return this.addRoute("PUT", path, handler);
+  }
+
+  delete(path: string, handler: unknown): this {
+    return this.addRoute("DELETE", path, handler);
+  }
+
+  patch(path: string, handler: unknown): this {
+    return this.addRoute("PATCH", path, handler);
+  }
+
+  head(path: string, handler: unknown): this {
+    return this.addRoute("HEAD", path, handler);
+  }
+
+  options(path: string, handler: unknown): this {
+    return this.addRoute("OPTIONS", path, handler);
+  }
+
+  mount(basePath: string, routes: Record<string, unknown>): this {
+    const cleanBase = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+    for (const [pattern, handler] of Object.entries(routes)) {
+      const fullPath = `${cleanBase}${pattern.startsWith("/") ? pattern : `/${pattern}`}`;
+      this.routesTable[fullPath] = handler;
+    }
+    return this;
+  }
+
+  launch(options?: AppOptions) {
+    const server = serve({
+      routes: this.routesTable,
+      ...options,
+    });
+    this.activeServer = server;
+    return server;
+  }
+
+  stop(): void {
+    if (this.activeServer) {
+      this.activeServer.stop();
+      this.activeServer = null;
+    }
+  }
+}
+
 /** Bun / Alloy compatible Response constructor & helpers */
 export const ResponseHelper = {
   json: responseJson,
@@ -89,6 +165,7 @@ export const Alloy = {
   file,
   response,
   Response: ResponseHelper,
+  App,
 };
 
 /** Bun.serve API compatibility namespace */
@@ -96,3 +173,5 @@ export const Bun = {
   serve,
   file,
 };
+
+export * from "../dist/index.js";
