@@ -89,6 +89,7 @@ fn to_js_function(handler: Unknown) -> JsFunction {
     unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
 }
 
+
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
 /// Rocket's generated route handler would have extracted before calling the user
 /// fn. `params` carries any `:name` / `<name>` path segments.
@@ -526,7 +527,7 @@ pub fn serve(
                 )?;
             let tsfn = Arc::new(tsfn);
             for m in ALL_METHODS {
-                push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
+                push_kind(RouteKind::Fn(tsfn.clone()), "/<_..>", &[*m], &mut out);
             }
         }
     }
