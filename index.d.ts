@@ -7,7 +7,7 @@
  * flavor napi-rs can build is listed, because `NAPI_RS_NATIVE_LIBRARY_PATH`
  * can point the loader at a WASI artifact this package does not build itself.
  */
-export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
+export declare const __napiBindingTarget: "native" | "wasm32-wasi" | "wasm32-wasip1";
 
 /**
  * The `Response` value a JS handler returns (or a static route value). Mirrors
@@ -18,40 +18,40 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
  * `{ status, headers, body }`, so it reads back into [`ResponsePayload`].
  */
 export declare class Response {
-  get status(): number
-  get headers(): Record<string, string>
-  get body(): Buffer | null
+  get status(): number;
+  get headers(): Record<string, string>;
+  get body(): Buffer | null;
   /**
    * `new Response(body, init)` — `body` may be a `string`, `Uint8Array`, or
    * `null` (matching the Bun/Web `Response` shape).
    */
-  constructor(body?: unknown | undefined | null, init?: ResponseInit | undefined | null)
+  constructor(body?: unknown | undefined | null, init?: ResponseInit | undefined | null);
   /**
    * `Response.json(data, init)` — stringifies `data` as JSON with the
    * `application/json` content type.
    */
-  static json(data: any, init?: ResponseInit | undefined | null): Response
+  static json(data: any, init?: ResponseInit | undefined | null): Response;
   /** `Response.redirect(url, status)` — `status` defaults to 302. */
-  static redirect(url: string, status?: number | undefined | null): Response
+  static redirect(url: string, status?: number | undefined | null): Response;
 }
 
 /** Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`. */
 export declare class Server {
-  url: string
-  port: number
+  url: string;
+  port: number;
   /** Gracefully stop the server (waits for in-flight requests). */
-  stop(): void
+  stop(): void;
 }
 
 /** `Alloy.file(path)` — marks a route value as a file served from disk. */
-export declare function file(path: string): StaticFile
+export declare function file(path: string): StaticFile;
 
 /**
  * NAPI equivalent of `#[launch]`: build the `Rocket<Build>` from every route
  * registered via [`register_route`], mount them, and boot the server. Resolves
  * once the server shuts down.
  */
-export declare function launch(): Promise<void>
+export declare function launch(): Promise<void>;
 
 /**
  * NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
@@ -60,7 +60,11 @@ export declare function launch(): Promise<void>
  * `async` function returning a `Response`). Route definitions accumulate until
  * [`launch`] is called, which builds and boots the Rocket instance.
  */
-export declare function registerRoute(method: string, path: string, handler: (arg: RequestInput) => Promise<ResponsePayload>): void
+export declare function registerRoute(
+  method: string,
+  path: string,
+  handler: (arg: RequestInput) => Promise<ResponsePayload>,
+): void;
 
 /**
  * Wire type sent from Rust -> JS for every request. Mirrors the request data
@@ -68,18 +72,18 @@ export declare function registerRoute(method: string, path: string, handler: (ar
  * body, and the `:param` / `<param>` segments) before calling the user fn.
  */
 export interface RequestInput {
-  method: string
-  path: string
-  query: string
-  headers: Array<[string, string]>
-  body?: Buffer
-  params: Record<string, string>
+  method: string;
+  path: string;
+  query: string;
+  headers: Array<[string, string]>;
+  body?: Buffer;
+  params: Record<string, string>;
 }
 
 /** Init passed to the `Response` constructor / static helpers. */
 export interface ResponseInit {
-  status?: number
-  headers?: Record<string, string>
+  status?: number;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -89,9 +93,9 @@ export interface ResponseInit {
  * why this mirror exists.)
  */
 export interface ResponsePayload {
-  status?: number
-  headers?: Record<string, string>
-  body?: Buffer
+  status?: number;
+  headers?: Record<string, string>;
+  body?: Buffer;
 }
 
 /**
@@ -103,22 +107,22 @@ export interface ResponsePayload {
  * This is deliberately *not* an `async fn`: the JS handles (`JsObject`,
  * `Function`) are not `Send`, so the generated future would not be spawnable.
  */
-export declare function serve(options: ServeOptions): Server
+export declare function serve(options: ServeOptions): Server;
 
 /** Options for [`serve`]; mirrors the Bun/Alloy `serve({ ... })` shape. */
 export interface ServeOptions {
-  port?: number
-  hostname?: string
-  unix?: string
-  routes?: object
+  port?: number;
+  hostname?: string;
+  unix?: string;
+  routes?: object;
   /**
    * The `fetch(req)` fallback. Typed as the bindgen `Function` because
    * `napi::JsFunction` implements neither `FromNapiValue` nor `ToNapiValue`.
    */
-  fetch?: (arg: RequestInput) => Promise<ResponsePayload>
+  fetch?: (arg: RequestInput) => Promise<ResponsePayload>;
 }
 
 /** Lazily-served static file marker returned by [`file`]. */
 export interface StaticFile {
-  path: string
+  path: string;
 }

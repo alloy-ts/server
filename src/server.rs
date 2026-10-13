@@ -30,9 +30,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::{Buffer, Function, Promise, Status, Unknown};
 use napi::threadsafe_function::ThreadsafeFunction;
-// `napi::JsObject` is deprecated in favour of `bindgen_prelude::Object`, but the
-// modern type needs `JsObjectValue` in scope plus explicit lifetimes; the legacy
-// type keeps this module simple.
 #[allow(deprecated)]
 use napi::JsObject;
 use napi::ValueType;
@@ -359,6 +356,7 @@ pub struct ServeOptions {
     pub port: Option<u32>,
     pub hostname: Option<String>,
     pub unix: Option<String>,
+    #[allow(deprecated)]
     pub routes: Option<JsObject>,
     /// The `fetch(req)` fallback. Typed as the bindgen `Function` because
     /// `napi::JsFunction` implements neither `FromNapiValue` nor `ToNapiValue`.
@@ -389,7 +387,8 @@ fn collect_routes(value: Unknown) -> napi::Result<Vec<(Option<String>, RouteHand
                 return Ok(vec![(None, RouteHandler::Static(resp))]);
             }
             // Otherwise it's a per-method map: `{ GET, POST, ... }`.
-            let obj: Object = unsafe { value.cast() }?;
+            #[allow(deprecated)]
+            let obj: JsObject = unsafe { value.cast() }?;
             let names = obj.get_property_names()?;
             let len = names.get_array_length()?;
             let mut out = Vec::new();
