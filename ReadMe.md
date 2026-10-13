@@ -56,46 +56,60 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
+## Configuration
+
+### Rocket Configuration (`Config`)
+
+```ts
+import { Config } from "@alloy-ts/server";
+
+// Get debug defaults or customize options
+const config = Config.tryFrom({
+  port: 8080,
+  address: "127.0.0.1",
+  workers: 16,
+  logLevel: "normal",
+  shutdown: {
+    ctrlc: true,
+    grace: 5,
+    mercy: 5,
+  },
+});
+
+console.log(`Configured port: ${config.port}`);
+```
+
+---
+
 ## Code Generation (Codegen)
 
 ### Route Pattern Parsing & Translation
 
 ```ts
-import { parseRocketRoutePattern, translatePatternToAlloy } from "@alloy-ts/server";
+import { parseRoute, toRocketPath } from "@alloy-ts/server";
 
-const params = parseRocketRoutePattern("/users/<id>?<age>&<name..>");
-// Extracted parameters:
-// [
-//   { name: "id", paramType: "string", isPath: true, isQuery: false, isOptional: false },
-//   { name: "age", paramType: "string", isPath: false, isQuery: true, isOptional: false },
-//   { name: "name", paramType: "string", isPath: false, isQuery: true, isOptional: true }
-// ]
+const routeDef = parseRoute({
+  method: "GET",
+  path: "/users/:id?<age>",
+  response: "User",
+});
 
-const alloyPattern = translatePatternToAlloy("/users/<id>/<rest..>");
-// "/users/:id/*"
+const rocketPath = toRocketPath("/users/:id/*");
+// "/users/<id>/<_..>"
 ```
 
 ### TypeScript Client SDK Generation
 
 ```ts
-import { generateTypescriptClient } from "@alloy-ts/server";
+import { parseRoutes, generateModule } from "@alloy-ts/server";
 
-const result = generateTypescriptClient(
-  [
-    {
-      method: "GET",
-      path: "/users/<id>",
-      name: "getUser",
-      params: [
-        { name: "id", paramType: "string", isPath: true, isQuery: false, isOptional: false },
-      ],
-      returnType: "Promise<{ id: string; name: string }>",
-    },
-  ],
-  { clientName: "UserApiClient" },
-);
+const routes = parseRoutes([
+  { method: "GET", path: "/users/:id", response: "User" },
+  { method: "POST", path: "/users", body: "CreateUser", response: "User" },
+]);
 
-console.log(result.code);
+const code = generateModule(routes, { baseUrl: "http://localhost:3000" });
+console.log(code);
 ```
 
 ---
