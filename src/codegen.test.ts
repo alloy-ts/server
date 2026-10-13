@@ -22,13 +22,13 @@ test("parseRouteUri extracts path and query dynamic parameters", () => {
 
   const pathParams = meta.params.filter((p: any) => !p.isQuery);
   expect(pathParams.length).toBe(1);
-  expect(pathParams[0].name).toBe("slug");
+  expect(pathParams[0]?.name).toBe("slug");
 
   const queryParams = meta.params.filter((p: any) => p.isQuery);
   expect(queryParams.length).toBe(2);
-  expect(queryParams[0].name).toBe("query");
-  expect(queryParams[1].name).toBe("rest");
-  expect(queryParams[1].isTrailing).toBe(true);
+  expect(queryParams[0]?.name).toBe("query");
+  expect(queryParams[1]?.name).toBe("rest");
+  expect(queryParams[1]?.isTrailing).toBe(true);
 });
 
 test("generateTsUriBuilder produces valid TypeScript uri helper code", () => {
