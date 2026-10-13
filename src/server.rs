@@ -392,20 +392,43 @@ fn mount_value<'env>(
             } else if let Ok(resp) = unsafe { v.clone().cast::<Response>() } {
                 push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
             } else {
-                // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
-                        .parse()
-                        .map_err(|_| {
-                            napi::Error::new(
-                                Status::GenericFailure,
-                                format!("invalid method: {method}"),
-                            )
-                        })?;
-                    mount_value(method_value, pattern, &[m], out)?;
+                let obj: Object = unsafe { v.cast()? };
+                // Check if object is a static HTML import or module object with a default string/Response property
+                if obj.has_named_property("html")? || obj.has_named_property("default")? {
+                    let prop = if obj.has_named_property("html")? {
+                        obj.get_named_property::<Unknown>("html")?
+                    } else {
+                        obj.get_named_property::<Unknown>("default")?
+                    };
+                    mount_value(prop, pattern, methods, out)?;
+                } else {
+                    // Per-method map: `{ GET, POST, ... }`.
+                    let names = obj.get_property_names()?;
+                    let len = names.get_array_length_unchecked()?;
+                    for i in 0..len {
+                        let method_str: String = names.get_element(i)?;
+                        let method_value: Unknown<'_> = obj.get_named_property(&method_str)?;
+                        let m: Method = method_str
+                            .parse()
+                            .map_err(|_| {
+                                napi::Error::new(
+                                    Status::GenericFailure,
+                                    format!("invalid method: {method_str}"),
+                                )
+                            })?;
+                        mount_value(method_value, pattern, &[m], out)?;
+                    }
                 }
             }
+        }
+        ValueType::String => {
+            let s: String = unsafe { value.cast()? };
+            let resp = Response {
+                status: 200,
+                headers: HashMap::from([("Content-Type".to_string(), "text/html; charset=utf-8".to_string())]),
+                body: Some(s.into_bytes()),
+            };
+            push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
         }
         _ => {}
     }
@@ -432,27 +455,155 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
 /// config (`port`, `hostname`, `unix`).
 #[napi]
 pub fn serve(
-    routes: Option<Unknown<'_>>,
-    fetch: Option<Unknown<'_>>,
+    config_or_routes: Option<Unknown<'_>>,
+    fetch_or_options: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
 ) -> napi::Result<Server> {
-    let options = options.unwrap_or_else(|| ServeOptions {
-        port: None,
-        hostname: None,
-        unix: None,
-    });
-    let port = options.port.unwrap_or(3000) as u16;
-    let hostname = options
-        .hostname
-        .clone()
-        .unwrap_or_else(|| "0.0.0.0".to_string());
+    serve_internal(config_or_routes, fetch_or_options, options)
+}
+
+/// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
+#[napi(object)]
+pub struct ServeOptions {
+    pub port: Option<u32>,
+    pub hostname: Option<String>,
+    pub unix: Option<String>,
+    pub routes: Option<Unknown<'static>>,
+    pub fetch: Option<Unknown<'static>>,
+}
+
+/// Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`.
+#[napi]
+pub struct Server {
+    #[napi(readonly)]
+    pub url: String,
+    #[napi(readonly)]
+    pub port: u32,
+    shutdown: Arc<Mutex<Option<Shutdown>>>,
+}
+
+#[napi]
+impl Server {
+    /// Gracefully stop the server (waits for in-flight requests).
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
+        }
+        Ok(())
+    }
+}
+
+/// Namespace struct mirroring Bun.serve (`Alloy.serve`).
+#[napi]
+pub struct Alloy;
+
+#[napi]
+impl Alloy {
+    #[napi]
+    pub fn serve(
+        config_or_routes: Option<Unknown<'_>>,
+        fetch_or_options: Option<Unknown<'_>>,
+        options: Option<ServeOptions>,
+    ) -> napi::Result<Server> {
+        serve_internal(config_or_routes, fetch_or_options, options)
+    }
+}
+
+/// Resolve port from options -> environment variables ($BUN_PORT, $PORT, $NODE_PORT) -> default 3000
+fn resolve_port(options_port: Option<u32>) -> u16 {
+    if let Some(p) = options_port {
+        return p as u16;
+    }
+    for env_var in &["BUN_PORT", "PORT", "NODE_PORT"] {
+        if let Ok(val) = std::env::var(env_var) {
+            if let Ok(p) = val.parse::<u16>() {
+                return p;
+            }
+        }
+    }
+    3000
+}
+
+fn serve_internal(
+    p1: Option<Unknown<'_>>,
+    p2: Option<Unknown<'_>>,
+    p3: Option<ServeOptions>,
+) -> napi::Result<Server> {
+    let mut routes: Option<Unknown<'_>> = None;
+    let mut fetch: Option<Unknown<'_>> = None;
+    let mut options_port: Option<u32> = None;
+    let mut hostname: Option<String> = None;
+    let mut _unix: Option<String> = None;
+
+    if let Some(ref opts_struct) = p3 {
+        options_port = opts_struct.port;
+        hostname = opts_struct.hostname.clone();
+        _unix = opts_struct.unix.clone();
+        routes = p1.clone();
+        fetch = p2.clone();
+    } else if let Some(ref arg1) = p1 {
+        if arg1.get_type()? == ValueType::Object {
+            let obj: Object = unsafe { arg1.clone().cast()? };
+
+            // A positional routes map object has keys starting with '/' (e.g. { "/ping": fn })
+            let is_routes_map = {
+                let names = obj.get_property_names()?;
+                let len = names.get_array_length_unchecked()?;
+                let mut is_map = false;
+                if len > 0 {
+                    let first_key: String = names.get_element(0)?;
+                    if first_key.starts_with('/') {
+                        is_map = true;
+                    }
+                }
+                is_map
+            };
+
+            if is_routes_map {
+                routes = Some(arg1.clone());
+                if let Some(ref arg2) = p2 {
+                    if arg2.get_type()? == ValueType::Function {
+                        fetch = Some(arg2.clone());
+                    }
+                }
+            } else {
+                if obj.has_named_property("routes")? {
+                    let r = obj.get_named_property::<Unknown>("routes")?;
+                    if r.get_type()? != ValueType::Undefined && r.get_type()? != ValueType::Null {
+                        routes = Some(r);
+                    }
+                }
+                if obj.has_named_property("fetch")? {
+                    let f = obj.get_named_property::<Unknown>("fetch")?;
+                    if f.get_type()? != ValueType::Undefined && f.get_type()? != ValueType::Null {
+                        fetch = Some(f);
+                    }
+                }
+                if obj.has_named_property("port")? {
+                    options_port = obj.get_named_property::<Option<u32>>("port")?;
+                }
+                if obj.has_named_property("hostname")? {
+                    hostname = obj.get_named_property::<Option<String>>("hostname")?;
+                }
+                if obj.has_named_property("unix")? {
+                    _unix = obj.get_named_property::<Option<String>>("unix")?;
+                }
+            }
+        } else {
+            routes = p1.clone();
+            fetch = p2.clone();
+        }
+    }
+
+    let req_port = resolve_port(options_port);
+    let hostname = hostname.unwrap_or_else(|| "0.0.0.0".to_string());
     let address: IpAddr = match hostname.as_str() {
         "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
         other => other
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
-    let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
 
@@ -487,25 +638,25 @@ pub fn serve(
     }
 
     let mut config = Config::default();
-    config.port = port;
+    config.port = req_port;
     config.address = address;
 
     let slot: Arc<Mutex<Option<Shutdown>>> = Arc::new(Mutex::new(None));
     let slot_clone = slot.clone();
+
+    let bound_port_slot: Arc<Mutex<Option<u16>>> = Arc::new(Mutex::new(None));
+    let bound_port_clone = bound_port_slot.clone();
 
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
             Box::pin(async move {
+                *bound_port_clone.lock().unwrap() = Some(orbit.config().port);
                 *slot_clone.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
-    // Run the server on its own dedicated tokio runtime in a background thread.
-    // `serve` is invoked synchronously from the Node event loop (no surrounding
-    // tokio context), so we cannot use `rocket::tokio::spawn` here — that would
-    // panic with "no reactor running". A standalone runtime guarantees Rocket has
-    // the executor it needs while keeping the JS call non-blocking.
+
     std::thread::spawn(move || {
         if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -517,39 +668,30 @@ pub fn serve(
         }
     });
 
+    // Wait briefly for liftoff to populate bound port if dynamic port (0) was requested
+    if req_port == 0 {
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_millis(1000) {
+            if let Some(p) = *bound_port_slot.lock().unwrap() {
+                let url = format!("http://{}:{}", hostname, p);
+                return Ok(Server {
+                    url,
+                    port: p as u32,
+                    shutdown: slot,
+                });
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    let final_port = bound_port_slot.lock().unwrap().unwrap_or(req_port);
+    let url = format!("http://{}:{}", hostname, final_port);
+
     Ok(Server {
         url,
-        port: port as u32,
+        port: final_port as u32,
         shutdown: slot,
     })
-}
-
-/// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
-#[napi(object)]
-pub struct ServeOptions {
-    pub port: Option<u32>,
-    pub hostname: Option<String>,
-    pub unix: Option<String>,
-}
-
-/// Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`.
-#[napi]
-pub struct Server {
-    pub url: String,
-    pub port: u32,
-    shutdown: Arc<Mutex<Option<Shutdown>>>,
-}
-
-#[napi]
-impl Server {
-    /// Gracefully stop the server (waits for in-flight requests).
-    #[napi]
-    pub fn stop(&self) -> napi::Result<()> {
-        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
-            shutdown.notify();
-        }
-        Ok(())
-    }
 }
 
 // ---------------------------------------------------------------------------

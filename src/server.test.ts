@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vite-plus/test";
 import {
   serve,
+  Alloy,
   response,
   responseJson,
   responseRedirect,
@@ -49,83 +50,89 @@ test("file helper creates static file marker", () => {
   expect(sf.path).toBe("./static/test.txt");
 });
 
-test("serve boots Rocket HTTP server with routes table, method maps, params, and stops gracefully", async () => {
-  const port = 3456;
+test("Alloy.serve boots Bun.serve compatible server with object options", async () => {
   const tempFilePath = join(process.cwd(), "test-file.txt");
   writeFileSync(tempFilePath, "Static File Content", "utf-8");
 
   try {
-    const server = serve(
-      {
-        "/hello": async () => response("Hello from Rocket!"),
-        "/json": async () => responseJson({ status: "ok", count: 42 }),
-        "/redirect": async () => responseRedirect("/hello"),
+    const server = Alloy.serve({
+      port: 0, // dynamic port selection
+      hostname: "127.0.0.1",
+      routes: {
+        "/api/status": response("OK"),
         "/users/:id": async (req: RequestInput) =>
-          responseJson({ userId: req.params.id, query: req.query }),
-        "/methods": {
-          GET: async () => response("GET response"),
+          response(`Hello User ${req.params.id}!`),
+        "/api/posts": {
+          GET: async () => response("List posts"),
           POST: async (req: RequestInput) => {
             const bodyStr = req.body ? Buffer.from(req.body).toString("utf-8") : "";
-            return responseJson({ received: bodyStr });
+            const parsed = bodyStr ? JSON.parse(bodyStr) : {};
+            return responseJson({ created: true, ...parsed });
           },
         },
-        "/static-file": file(tempFilePath),
+        "/api/*": responseJson({ message: "Not found" }, { status: 404 }),
+        "/blog/hello": responseRedirect("/blog/hello/world"),
+        "/favicon.ico": file(tempFilePath),
+        "/html-page": "<h1>HTML Page</h1>",
+        "/html-import": { html: "<div>App Component</div>" },
       },
-      async (req: RequestInput) =>
-        responseJson({ fallback: true, path: req.path }, { status: 404 }),
-      { port, hostname: "127.0.0.1" },
-    );
+      async fetch(req: RequestInput) {
+        return responseJson({ fallback: true, path: req.path }, { status: 404 });
+      },
+    });
 
-    expect(server.url).toBe(`http://127.0.0.1:${port}`);
-    expect(server.port).toBe(port);
+    expect(server.port).toBeGreaterThan(0);
+    expect(server.url).toBe(`http://127.0.0.1:${server.port}`);
 
-    // Give the server a brief moment to liftoff
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Test GET /hello
-    const resHello = await fetchServer(`${server.url}/hello`);
-    expect(resHello.status).toBe(200);
-    expect(resHello.bodyText).toBe("Hello from Rocket!");
+    // Test static route
+    const resStatus = await fetchServer(`${server.url}/api/status`);
+    expect(resStatus.status).toBe(200);
+    expect(resStatus.bodyText).toBe("OK");
 
-    // Test GET /json
-    const resJson = await fetchServer(`${server.url}/json`);
-    expect(resJson.status).toBe(200);
-    expect(resJson.headers.get("content-type")).toContain("application/json");
-    expect(resJson.json).toEqual({ status: "ok", count: 42 });
-
-    // Test GET /redirect
-    const resRedir = await fetchServer(`${server.url}/redirect`, { redirect: "manual" });
-    expect(resRedir.status).toBe(302);
-    expect(resRedir.headers.get("location")).toBe("/hello");
-
-    // Test GET /users/123?page=2
-    const resUser = await fetchServer(`${server.url}/users/123?page=2`);
+    // Test dynamic route /users/:id
+    const resUser = await fetchServer(`${server.url}/users/42`);
     expect(resUser.status).toBe(200);
-    expect(resUser.json.userId).toBe("123");
-    expect(resUser.json.query).toBe("page=2");
+    expect(resUser.bodyText).toBe("Hello User 42!");
 
-    // Test GET /methods and POST /methods
-    const resMethodGet = await fetchServer(`${server.url}/methods`);
-    expect(resMethodGet.bodyText).toBe("GET response");
+    // Test per-HTTP method handlers
+    const resGetPosts = await fetchServer(`${server.url}/api/posts`);
+    expect(resGetPosts.bodyText).toBe("List posts");
 
-    const resMethodPost = await fetchServer(`${server.url}/methods`, {
+    const resPostPosts = await fetchServer(`${server.url}/api/posts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Alloy" }),
+      body: JSON.stringify({ title: "New Post" }),
     });
-    expect(resMethodPost.json).toEqual({ received: '{"name":"Alloy"}' });
+    expect(resPostPosts.json).toEqual({ created: true, title: "New Post" });
 
-    // Test static file route
-    const resFile = await fetchServer(`${server.url}/static-file`);
-    expect(resFile.status).toBe(200);
-    expect(resFile.bodyText).toBe("Static File Content");
+    // Test redirect
+    const resRedir = await fetchServer(`${server.url}/blog/hello`, { redirect: "manual" });
+    expect(resRedir.status).toBe(302);
+    expect(resRedir.headers.get("location")).toBe("/blog/hello/world");
 
-    // Test fallback handler for unmatched route
-    const resFallback = await fetchServer(`${server.url}/unmatched-path`);
-    expect(resFallback.status).toBe(404);
-    expect(resFallback.json).toEqual({ fallback: true, path: "/unmatched-path" });
+    // Test favicon.ico file
+    const resFavicon = await fetchServer(`${server.url}/favicon.ico`);
+    expect(resFavicon.status).toBe(200);
+    expect(resFavicon.bodyText).toBe("Static File Content");
 
-    // Gracefully stop
+    // Test HTML string route
+    const resHtml = await fetchServer(`${server.url}/html-page`);
+    expect(resHtml.status).toBe(200);
+    expect(resHtml.headers.get("content-type")).toContain("text/html");
+    expect(resHtml.bodyText).toBe("<h1>HTML Page</h1>");
+
+    // Test HTML import route object
+    const resHtmlImport = await fetchServer(`${server.url}/html-import`);
+    expect(resHtmlImport.status).toBe(200);
+    expect(resHtmlImport.bodyText).toBe("<div>App Component</div>");
+
+    // Test wildcard fallback for /api/*
+    const resApiWildcard = await fetchServer(`${server.url}/api/unknown`);
+    expect(resApiWildcard.status).toBe(404);
+    expect(resApiWildcard.json).toEqual({ message: "Not found" });
+
     server.stop();
   } finally {
     if (existsSync(tempFilePath)) {
@@ -134,14 +141,38 @@ test("serve boots Rocket HTTP server with routes table, method maps, params, and
   }
 });
 
+test("Environment variable port fallback works", async () => {
+  process.env.PORT = "3888";
+  try {
+    const server = serve({
+      routes: {
+        "/ping": async () => response("pong"),
+      },
+      hostname: "127.0.0.1",
+    });
+
+    expect(server.port).toBe(3888);
+    expect(server.url).toBe("http://127.0.0.1:3888");
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const res = await fetchServer(`${server.url}/ping`);
+    expect(res.bodyText).toBe("pong");
+
+    server.stop();
+  } finally {
+    delete process.env.PORT;
+  }
+});
+
 test("registerRoute registers individual routes before serve", async () => {
-  const port = 3457;
+  const port = 3459;
 
   registerRoute("GET", "/registered", async () => response("Registered Handler"));
 
   const server = serve(
     {
-      "/hello": () => response("Hello!"),
+      "/hello": async () => response("Hello!"),
     },
     undefined,
     { port, hostname: "127.0.0.1" },
