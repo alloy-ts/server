@@ -28,11 +28,13 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
-use napi::threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction};
+use napi::threadsafe_function::ThreadsafeFunction;
+use napi::{JsArray, JsFunction, JsObject, Unknown};
 use napi_derive::napi;
 
 use rocket::config::Config;
 use rocket::data::ByteUnit;
+use rocket::fairing::AdHoc;
 use rocket::http::{Header, Method, Status as RocketStatus};
 use rocket::outcome::Outcome;
 use rocket::request::Request;
@@ -188,16 +190,14 @@ impl Handler for JsHandler {
                 Outcome::Success(build_response(&output))
             }
             RouteKind::Static(payload) => Outcome::Success(build_response(payload.as_ref())),
-            RouteKind::File { path, cache: _ } => {
-                match rocket::tokio::fs::read(path).await {
-                    Ok(bytes) => {
-                        let mut builder = RocketResponse::build();
-                        builder.sized_body(bytes.len(), Cursor::new(bytes));
-                        Outcome::Success(builder.finalize())
-                    }
-                    Err(_) => Outcome::Error(RocketStatus::NotFound),
+            RouteKind::File { path, cache: _ } => match rocket::tokio::fs::read(path).await {
+                Ok(bytes) => {
+                    let mut builder = RocketResponse::build();
+                    builder.sized_body(bytes.len(), Cursor::new(bytes));
+                    Outcome::Success(builder.finalize())
                 }
-            }
+                Err(_) => Outcome::Error(RocketStatus::NotFound),
+            },
         }
     }
 }
@@ -315,16 +315,6 @@ fn build_response(payload: &ResponsePayload) -> RocketResponse<'static> {
     builder.finalize()
 }
 
-/// Options for [`serve`]; mirrors the Bun/Alloy `serve({ ... })` shape.
-#[napi(object)]
-pub struct ServeOptions {
-    pub port: Option<u32>,
-    pub hostname: Option<String>,
-    pub unix: Option<String>,
-    pub routes: Option<JsObject>,
-    pub fetch: Option<JsFunction>,
-}
-
 /// Methods expanded when a route value is a bare function / static / file.
 const ALL_METHODS: &[Method] = &[
     Method::Get,
@@ -342,11 +332,19 @@ const ALL_METHODS: &[Method] = &[
 /// slot): a JS function, a `Response`/`file()` result, or a `{ METHOD: ... }`
 /// map. The order of the typed casts matters: `StaticFile` (has `path`) before
 /// `ResponsePayload` (has `status`) before treating it as a method map.
-fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<Route>) -> napi::Result<()> {
+fn mount_value<'env>(
+    value: Unknown<'env>,
+    pattern: &str,
+    methods: &[Method],
+    out: &mut Vec<Route>,
+) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
             let f: JsFunction = value.cast()?;
-            let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+            let tsfn: HandlerTsfn =
+                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
+                    |ctx| Ok(ctx.value),
+                )?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
@@ -365,11 +363,16 @@ fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<
                 push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
             } else {
                 // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown> = v.cast()?;
+                let map: HashMap<String, Unknown<'env>> = v.cast()?;
                 for (method, method_value) in map {
                     let m: Method = method
                         .parse()
-                        .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+                        .map_err(|_| {
+                            napi::Error::new(
+                                Status::GenericFailure,
+                                format!("invalid method: {method}"),
+                            )
+                        })?;
                     mount_value(method_value, pattern, &[m], out)?;
                 }
             }
@@ -389,15 +392,30 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-/// Captured `Shutdown` handle so `Server::stop` can terminate the running server.
-static SHUTDOWN: OnceLock<Mutex<Option<Shutdown>>> = OnceLock::new();
+/// Shared shutdown handle, filled by the launch fairing and drained by
+/// [`Server::stop`].
+type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
+static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
 /// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
 /// launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
 /// route, spawns it on the tokio runtime, and resolves immediately with a
 /// [`Server`] handle (mirroring Bun's synchronous `serve` return).
+///
+/// `routes` and `fetch` are taken as direct parameters (a JS object / function
+/// cannot be a `#[napi(object)]` struct field); `options` carries the scalar
+/// config (`port`, `hostname`, `unix`).
 #[napi]
-pub async fn serve(options: ServeOptions) -> napi::Result<Server> {
+pub async fn serve(
+    routes: Option<JsObject>,
+    fetch: Option<JsFunction>,
+    options: Option<ServeOptions>,
+) -> napi::Result<Server> {
+    let options = options.unwrap_or_else(|| ServeOptions {
+        port: None,
+        hostname: None,
+        unix: None,
+    });
     let port = options.port.unwrap_or(3000) as u16;
     let hostname = options
         .hostname
@@ -411,27 +429,26 @@ pub async fn serve(options: ServeOptions) -> napi::Result<Server> {
     };
     let url = format!("http://{}:{}", hostname, port);
 
-    let mut routes: Vec<Route> = Vec::new();
-    if let Some(table) = options.routes {
+    let mut out: Vec<Route> = Vec::new();
+    if let Some(table) = routes {
         let names = table.get_property_names()?;
         let len = names.get_array_length()?;
         for i in 0..len {
             let pattern: String = names.get_element(i)?;
-            let value: Unknown = table.get_named_property(&pattern)?;
-            mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+            let value: Unknown<'_> = table.get_named_property(&pattern)?;
+            mount_value(value, &pattern, ALL_METHODS, &mut out)?;
         }
     }
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
-    if let Some(fetch) = options.fetch {
-        let tsfn: HandlerTsfn = fetch.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+    if let Some(fetch) = fetch {
+        let tsfn: HandlerTsfn =
+            fetch.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
+                |ctx| Ok(ctx.value),
+            )?;
+        let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            push_kind(
-                RouteKind::Fn(Arc::new(tsfn.clone())),
-                "<_..>",
-                &[*m],
-                &mut routes,
-            );
+            push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
         }
     }
 
@@ -439,9 +456,17 @@ pub async fn serve(options: ServeOptions) -> napi::Result<Server> {
     config.port = port;
     config.address = address;
 
-    let mut rocket = rocket::build().configure(config).mount("/", routes);
-    let shutdown = rocket.shutdown();
-    *SHUTDOWN.get_or_init(|| Mutex::new(None)) = Some(shutdown);
+    let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+    SHUTDOWN.get_or_init(|| slot.clone());
+
+    let rocket = rocket::build()
+        .configure(config)
+        .mount("/", out)
+        .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+            Box::pin(async move {
+                *slot.lock().unwrap() = Some(orbit.shutdown());
+            })
+        }));
     rocket::tokio::spawn(async move {
         let _ = rocket.launch().await;
     });
@@ -450,6 +475,14 @@ pub async fn serve(options: ServeOptions) -> napi::Result<Server> {
         url,
         port: port as u32,
     })
+}
+
+/// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
+#[napi(object)]
+pub struct ServeOptions {
+    pub port: Option<u32>,
+    pub hostname: Option<String>,
+    pub unix: Option<String>,
 }
 
 /// Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`.
@@ -464,8 +497,10 @@ impl Server {
     /// Gracefully stop the server (waits for in-flight requests).
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(shutdown) = SHUTDOWN.lock().unwrap().take() {
-            shutdown.shutdown();
+        if let Some(slot) = SHUTDOWN.get() {
+            if let Some(shutdown) = slot.lock().unwrap().take() {
+                shutdown.shutdown();
+            }
         }
         Ok(())
     }
@@ -489,7 +524,10 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 /// [`launch`] is called, which builds and boots the Rocket instance.
 #[napi]
 pub fn register_route(method: String, path: String, handler: JsFunction) -> napi::Result<()> {
-    let tsfn: HandlerTsfn = handler.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+    let tsfn: HandlerTsfn =
+        handler.create_threadsafe_function::<RequestInput, RequestInput, Promise<ResponsePayload>>(
+            |ctx| Ok(ctx.value),
+        )?;
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;

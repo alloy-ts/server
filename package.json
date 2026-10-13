@@ -7,9 +7,13 @@
     "index.d.ts"
   ],
   "type": "module",
-  "types": "index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/main.mjs",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -41,6 +45,7 @@
   },
   "napi": {
     "binaryName": "alloy-server",
+    "jsName": "index",
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",
