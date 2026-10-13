@@ -582,6 +582,89 @@ impl Server {
 }
 
 // ---------------------------------------------------------------------------
+// High-level Object-Oriented App API (`App`)
+// ---------------------------------------------------------------------------
+
+/// Object-oriented application builder mirroring `rocket::build()`.
+///
+/// Provides `app.get()`, `app.post()`, `app.put()`, `app.delete()`,
+/// `app.patch()`, `app.head()`, `app.options()`, `app.mount()`, `app.launch()`, `app.stop()`.
+#[napi]
+pub struct App {
+    #[napi(skip)]
+    pub server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self {
+            server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    pub fn get(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn head(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "HEAD".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn options(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "OPTIONS".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn mount(&self, env: Env, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route(env, "GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn launch(&self, env: Env, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let server = serve(env, None, None, options)?;
+        let s = Server {
+            url: server.url.clone(),
+            port: server.port,
+        };
+        *self.server.lock().unwrap() = Some(server);
+        Ok(s)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(server) = self.server.lock().unwrap().take() {
+            server.stop()?;
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Low-level registry API: `register_route` for the codegen/decorator path that
 // builds routes one-at-a-time before booting.
 // ---------------------------------------------------------------------------
