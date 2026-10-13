@@ -2,7 +2,9 @@ import { expect, test } from "vite-plus/test";
 import {
   main,
   Alloy,
+  App,
   Response,
+  response,
   Config,
   get,
   post,
@@ -21,11 +23,13 @@ test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
 });
 
-test("Alloy object has serve, file, Response, Config", () => {
+test("Alloy object has serve, file, Response, Config, App, response", () => {
   expect(typeof Alloy.serve).toBe("function");
   expect(typeof Alloy.file).toBe("function");
   expect(Alloy.Response).toBe(Response);
   expect(Alloy.Config).toBe(Config);
+  expect(Alloy.App).toBe(App);
+  expect(Alloy.response).toBe(response);
 });
 
 test("Response static constructors and instance methods", () => {
@@ -42,6 +46,27 @@ test("Response static constructors and instance methods", () => {
   const redirResp = Response.redirect("/new-location", 302);
   expect(redirResp.status).toBe(302);
   expect(redirResp.headers.some(([k, v]) => k === "Location" && v === "/new-location")).toBe(true);
+});
+
+test("response helper function", () => {
+  const resp1 = response("Hello, world!");
+  expect(resp1.status).toBe(200);
+
+  const resp2 = response(Buffer.from("Hello Buffer"), { status: 201 });
+  expect(resp2.status).toBe(201);
+});
+
+test("App class methods and server launching", () => {
+  const app = new App({ port: 0 });
+
+  app.get("/", async () => response("Hello, world!"));
+  app.post("/submit", async () => response("Submitted", { status: 201 }));
+
+  const server = app.launch();
+  expect(server.url).toContain("http://");
+  expect(typeof server.port).toBe("number");
+
+  app.stop();
 });
 
 test("Alloy.file returns StaticFile marker", () => {
