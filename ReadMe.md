@@ -1,6 +1,35 @@
-# Starter Template
+# Alloy Server Native
 
-TypeScript starter template.
+High-performance NAPI bindings for Rocket web framework in TypeScript (Node.js).
+
+## Usage
+
+```ts
+import { serve, Response, file } from "@alloy-ts/server";
+
+const server = serve({
+  port: 3000,
+  routes: {
+    "/api/status": new Response("OK"),
+    "/users/:id": (req) => {
+      return new Response(`Hello User ${req.params.id}!`);
+    },
+    "/api/posts": {
+      GET: () => new Response("List posts"),
+      POST: async (req) => {
+        const data = JSON.parse(req.body?.toString("utf-8") ?? "{}");
+        return Response.json({ created: true, ...data });
+      },
+    },
+    "/favicon.ico": file("./favicon.ico"),
+  },
+  fetch(req) {
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
+console.log(`Server running at ${server.url}`);
+```
 
 ## Development
 
@@ -22,28 +51,10 @@ vp install
 vp test
 ```
 
-- Run the locally:
-
-```bash
-npm run dev
-```
-
 - Build the library:
 
 ```bash
 npm run build
-```
-
-- Code formatting:
-
-```bash
-npm run fmt
-```
-
-- Linting:
-
-```bash
-npm run lint
 ```
 
 - Code check:
