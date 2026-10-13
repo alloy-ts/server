@@ -55,11 +55,21 @@ use rocket::{Data, Shutdown};
 ///
 /// The `create_threadsafe_function` generic order is
 /// `<T, NewArgs, Return, ErrorStatus, F, ES, Weak, MaxQueueSize>`; the closure
-/// returns `NewArgs` (a 1-tuple of the request), while `Return` is the JS
-/// function's resolved value (`Promise<Response>`, whose `FromNapiValue` awaits
-/// the JS promise for us).
+/// returns `NewArgs` (the request), while `Return` is the JS function's
+/// resolved value (`Promise<Response>`, whose `FromNapiValue` awaits the JS
+/// promise for us).
+///
+/// Two details are load-bearing:
+///
+/// * `ES` (callee-handled) is `false`. When it is `true`, napi-rs prepends a
+///   Node-style `null` error argument, so the JS handler would be invoked as
+///   `handler(null, request)` and its first parameter would always be `null`.
+/// * `NewArgs` is `RequestInput` itself, **not** `(RequestInput,)`. A 1-tuple
+///   hits napi-rs's blanket `JsValuesTupleIntoVec for T: ToNapiValue` impl,
+///   which converts the tuple into a single JS *array* — the handler would
+///   receive `[request]` instead of `request`.
 type HandlerTsfn =
-    ThreadsafeFunction<RequestInput, Promise<Response>, (RequestInput,), Status, true, false, 0>;
+    ThreadsafeFunction<RequestInput, Promise<Response>, RequestInput, Status, false, false, 0>;
 
 /// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
 /// a JS object) into a `napi::JsFunction` so we can call
@@ -194,7 +204,7 @@ impl Handler for JsHandler {
                 let input = build_request(request, data, &pattern).await;
                 // `call_async` resolves to `Promise<Response>`; awaiting that
                 // promise yields the JS `Response` (or a JS error -> 500).
-                let output = match tsfn.call_async(Ok(input)).await {
+                let output = match tsfn.call_async(input).await {
                     Ok(promise) => match promise.await {
                         Ok(payload) => payload,
                         Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
@@ -357,8 +367,8 @@ fn mount_value<'env>(
         ValueType::Function => {
             let f = to_js_function(value);
             let tsfn: HandlerTsfn =
-                f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-                    |ctx| Ok((ctx.value,)),
+                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+                    |ctx| Ok(ctx.value),
                 )?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
@@ -459,8 +469,8 @@ pub fn serve(
     if let Some(fetch) = fetch {
         let f = to_js_function(fetch);
         let tsfn: HandlerTsfn =
-            f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-                |ctx| Ok((ctx.value,)),
+            f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+                |ctx| Ok(ctx.value),
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
@@ -554,8 +564,8 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
     let f = to_js_function(handler);
     let tsfn: HandlerTsfn =
-        f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-            |ctx| Ok((ctx.value,)),
+        f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+            |ctx| Ok(ctx.value),
         )?;
     let m: Method = method
         .parse()
