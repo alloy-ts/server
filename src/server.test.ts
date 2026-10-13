@@ -116,6 +116,40 @@ describe("Rocket server NAPI bindings", () => {
       expect(server).not.toBeNull();
       expect(() => server?.stop()).not.toThrow();
     });
+
+    test("serve with port 0 binds to a random port", async () => {
+      const randomServer = serve(
+        {
+          "/health": response("OK"),
+        },
+        undefined,
+        { port: 0, hostname: "127.0.0.1" },
+      );
+
+      expect(randomServer.port).toBeGreaterThan(0);
+      expect(randomServer.url).toBe(`http://127.0.0.1:${randomServer.port}`);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const res = await fetch(`${randomServer.url}/health`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("OK");
+
+      randomServer.stop();
+    });
+
+    test("serve supports unix option", () => {
+      const unixServer = serve(
+        {
+          "/": response("OK"),
+        },
+        undefined,
+        { unix: "/tmp/my-test-socket.sock" },
+      );
+
+      expect(unixServer.url).toBe("unix:///tmp/my-test-socket.sock");
+      unixServer.stop();
+    });
   });
 
   describe("registerRoute low-level API", () => {

@@ -443,7 +443,15 @@ pub fn serve(
         hostname: None,
         unix: None,
     });
-    let port = options.port.unwrap_or(3000) as u16;
+
+    let default_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
+
+    let requested_port = options.port.map(|p| p as u16).unwrap_or(default_port);
     let hostname = options
         .hostname
         .clone()
@@ -454,7 +462,8 @@ pub fn serve(
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
-    let url = format!("http://{}:{}", hostname, port);
+
+    let unix_socket = options.unix.clone();
 
     let mut out: Vec<Route> = Vec::new();
     if let Ok(mut guard) = get_registered_routes().lock() {
@@ -485,25 +494,33 @@ pub fn serve(
     }
 
     let mut config = Config::default();
-    config.port = port;
+    config.port = requested_port;
     config.address = address;
 
     let slot: ShutdownSlot = Arc::new(Mutex::new(None));
     SHUTDOWN.get_or_init(|| slot.clone());
 
+    let (tx, rx) = std::sync::mpsc::channel::<(u16, String)>();
+    let unix_socket_clone = unix_socket.clone();
+    let hostname_clone = hostname.clone();
+
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+            let actual_port = orbit.config().port;
+            let actual_url = if let Some(unix_path) = &unix_socket_clone {
+                format!("unix://{unix_path}")
+            } else {
+                format!("http://{}:{}", hostname_clone, actual_port)
+            };
+            let _ = tx.send((actual_port, actual_url));
             Box::pin(async move {
                 *slot.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
+
     // Run the server on its own dedicated tokio runtime in a background thread.
-    // `serve` is invoked synchronously from the Node event loop (no surrounding
-    // tokio context), so we cannot use `rocket::tokio::spawn` here — that would
-    // panic with "no reactor running". A standalone runtime guarantees Rocket has
-    // the executor it needs while keeping the JS call non-blocking.
     std::thread::spawn(move || {
         if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -515,9 +532,20 @@ pub fn serve(
         }
     });
 
+    let (final_port, final_url) = rx
+        .recv_timeout(std::time::Duration::from_millis(1500))
+        .unwrap_or_else(|_| {
+            let url = if let Some(unix_path) = &unix_socket {
+                format!("unix://{unix_path}")
+            } else {
+                format!("http://{}:{}", hostname, requested_port)
+            };
+            (requested_port, url)
+        });
+
     Ok(Server {
-        url,
-        port: port as u32,
+        url: final_url,
+        port: final_port as u32,
     })
 }
 
