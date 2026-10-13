@@ -4,7 +4,7 @@ import {
   responseJson,
   responseRedirect,
   file,
-  RequestInput,
+  type RequestInput,
 } from "../dist/index.js";
 
 // Alloy.serve starts a high-performance HTTP server backed by Rocket (NAPI)
