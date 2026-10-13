@@ -36,7 +36,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
-use napi::{JsFunction, JsObject, Unknown};
+#[allow(deprecated)]
+use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -174,7 +175,6 @@ enum RouteKind {
     Static(Arc<Response>),
     File {
         path: String,
-        cache: Arc<Mutex<Option<Vec<u8>>>>,
     },
 }
 
@@ -204,7 +204,7 @@ impl Handler for JsHandler {
                 RouteOutcome::Success(build_response(&output))
             }
             RouteKind::Static(payload) => RouteOutcome::Success(build_response(payload.as_ref())),
-            RouteKind::File { path, cache: _ } => match rocket::tokio::fs::read(path).await {
+            RouteKind::File { path } => match rocket::tokio::fs::read(path).await {
                 Ok(bytes) => {
                     let mut builder = RocketResponse::build();
                     builder.sized_body(bytes.len(), Cursor::new(bytes));
@@ -368,7 +368,6 @@ fn mount_value<'env>(
                 push_kind(
                     RouteKind::File {
                         path: fr.path,
-                        cache: Arc::new(Mutex::new(None)),
                     },
                     pattern,
                     methods,
@@ -446,7 +445,7 @@ pub fn serve(
 
     let mut out: Vec<Route> = Vec::new();
     if let Some(table) = routes {
-        let table: JsObject = unsafe { table.cast()? };
+        let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
         for i in 0..len {
@@ -484,8 +483,20 @@ pub fn serve(
                 *slot.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
-    rocket::tokio::spawn(async move {
-        let _ = rocket.launch().await;
+    // Run the server on its own dedicated tokio runtime in a background thread.
+    // `serve` is invoked synchronously from the Node event loop (no surrounding
+    // tokio context), so we cannot use `rocket::tokio::spawn` here — that would
+    // panic with "no reactor running". A standalone runtime guarantees Rocket has
+    // the executor it needs while keeping the JS call non-blocking.
+    std::thread::spawn(move || {
+        if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            rt.block_on(async move {
+                let _ = rocket.launch().await;
+            });
+        }
     });
 
     Ok(Server {
