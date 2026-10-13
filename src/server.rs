@@ -93,6 +93,7 @@ fn to_js_function(handler: Unknown) -> JsFunction {
 /// Rocket's generated route handler would have extracted before calling the user
 /// fn. `params` carries any `:name` / `<name>` path segments.
 #[napi(object)]
+#[derive(Clone)]
 pub struct RequestInput {
     pub method: String,
     pub path: String,
@@ -104,16 +105,16 @@ pub struct RequestInput {
 
 /// Init passed to the `Response` constructors / helpers.
 #[napi(object)]
+#[derive(Clone)]
 pub struct ResponseInit {
     pub status: Option<u32>,
     pub headers: Option<HashMap<String, String>>,
 }
 
 /// The `Response` value a JS handler returns. It is a plain `#[napi(object)]`
-/// (see the module docs for why it is not a class) carrying the same `status` /
-/// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
-/// produce.
+/// carrying the status, headers, and body shape.
 #[napi(object)]
+#[derive(Clone)]
 pub struct Response {
     pub status: u32,
     pub headers: HashMap<String, String>,
@@ -122,7 +123,7 @@ pub struct Response {
 
 /// `new Response(body, init)` (Bun/Web shape) — `body` may be a `string`.
 #[napi]
-pub fn response(body: Option<String>, init: Option<ResponseInit>) -> Response {
+pub fn response_create(body: Option<String>, init: Option<ResponseInit>) -> Response {
     let init = init.unwrap_or(ResponseInit {
         status: None,
         headers: None,
@@ -133,6 +134,12 @@ pub fn response(body: Option<String>, init: Option<ResponseInit>) -> Response {
         headers: init.headers.unwrap_or_default(),
         body,
     }
+}
+
+/// `new Response(body, init)` — alias for `response_create`.
+#[napi]
+pub fn response(body: Option<String>, init: Option<ResponseInit>) -> Response {
+    response_create(body, init)
 }
 
 /// `Response.json(data, init?)` — stringifies `data` as JSON with the
@@ -318,6 +325,9 @@ fn translate_pattern(pattern: &str) -> String {
         } else {
             out.push(c);
         }
+    }
+    if !out.starts_with('/') {
+        out.insert(0, '/');
     }
     out
 }
