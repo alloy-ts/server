@@ -26,6 +26,7 @@
     },
 
     // Best practices
+    "experimentalDecorators": true,
     "strict": true,
     "skipLibCheck": true,
     "isolatedModules": true,
@@ -36,7 +37,6 @@
     // Some stricter flags
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
     "noPropertyAccessFromIndexSignature": true
   }
 }
