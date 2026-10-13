@@ -5,6 +5,7 @@ import {
   Config as NativeConfig,
   Server,
   launch,
+  registerRoute,
 } from "../native/index.js";
 
 import * as codegen from "./codegen.ts";
@@ -47,7 +48,7 @@ export const Alloy = {
   Config,
 };
 
-export { Server, launch, codegen };
+export { Server, launch, registerRoute, codegen };
 
 export * from "./codegen.ts";
 

@@ -242,8 +242,12 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 }
 
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
-    let mut chars = pattern.chars().peekable();
+    let mut out = String::with_capacity(pattern.len() + 1);
+    let trimmed = pattern.trim();
+    if !trimmed.starts_with('/') {
+        out.push('/');
+    }
+    let mut chars = trimmed.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
             let mut name = String::new();
@@ -383,7 +387,7 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
         for m in ALL_METHODS {
             push_kind(
                 RouteKind::Fn(tsfn.clone()),
-                "<_..>",
+                "/<_..>",
                 &[*m],
                 &mut routes,
             );
@@ -396,7 +400,7 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
 
     let rocket = rocket::build().configure(config).mount("/", routes);
 
-    rocket::tokio::spawn(async move {
+    spawn(async move {
         if let Ok(ignited) = rocket.ignite().await {
             let shutdown = ignited.shutdown();
             *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);
