@@ -1,0 +1,41 @@
+import * as native from "../dist/index.js";
+
+export function main(): string {
+  return "Hello, world!";
+}
+
+export const Response = native.Response;
+export const file = native.file;
+export const serve = (options: {
+  routes?: Record<string, unknown>;
+  fetch?: (req: native.RequestInput) => unknown;
+  port?: number;
+  hostname?: string;
+  unix?: string;
+}) => {
+  const { routes, fetch, ...serveOptions } = options;
+  return native.serve(routes, fetch, serveOptions);
+};
+
+export function uri(
+  template: string,
+  params: Record<string, string | number | boolean> = {},
+): string {
+  const strParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    strParams[k] = String(v);
+  }
+  return native.buildUri(template, strParams);
+}
+
+export const Rocket = native.Rocket;
+
+export const Alloy = {
+  serve,
+  file,
+  Response,
+  Rocket,
+  uri,
+};
+
+export default Alloy;
