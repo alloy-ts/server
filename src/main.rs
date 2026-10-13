@@ -110,11 +110,24 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
     let params: HashMap<String, String> = req
         .route()
         .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
+            let pattern = route.uri.to_string();
+            let p_segs: Vec<&str> = pattern.trim_start_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+            let path_str = req.uri().path().as_str();
+            let a_segs: Vec<&str> = path_str.trim_start_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+            let mut map = HashMap::new();
+            for (idx, seg) in p_segs.iter().enumerate() {
+                if let Some(inner) = seg.strip_prefix('<') {
+                    let name = inner.strip_suffix("..>").or_else(|| inner.strip_suffix('>'));
+                    if let Some(name) = name {
+                        if name != "_" {
+                            if let Some(v) = a_segs.get(idx) {
+                                map.insert(name.to_string(), (*v).to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            map
         })
         .unwrap_or_default();
 

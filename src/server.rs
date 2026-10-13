@@ -37,6 +37,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
+#[allow(deprecated)]
 use napi::{JsFunction, Unknown};
 use napi::bindgen_prelude::Function;
 use napi_derive::napi;
@@ -75,19 +76,19 @@ type HandlerTsfn =
 /// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
 /// a JS object) into a `napi::JsFunction` so we can call
 /// `create_threadsafe_function`.
+/// Wrap any JS handler function in `async (...args) => await fn(...args)` so its
+/// return value is guaranteed to be a JS Promise.
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> JsFunction {
     debug_assert_eq!(
         std::mem::size_of::<Unknown>(),
         std::mem::size_of::<JsFunction>()
     );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+    unsafe { std::mem::transmute_copy(&handler) }
 }
 
-/// Wrap any JS handler function in `async (...args) => await fn(...args)` so its
-/// return value is guaranteed to be a JS Promise.
 #[allow(deprecated)]
-fn wrap_handler(env: &Env, handler: Unknown) -> napi::Result<JsFunction> {
+fn wrap_handler<'env>(env: &'env Env, handler: Unknown<'env>) -> napi::Result<JsFunction> {
     let wrap_creator: Function = env.run_script("(fn) => async (...args) => await fn(...args)")?;
     let wrapped: Unknown = wrap_creator.call(handler)?;
     Ok(to_js_function(wrapped))
