@@ -44,6 +44,10 @@ export declare class Config {
   set logLevel(value: string);
   get cliColors(): boolean;
   set cliColors(value: boolean);
+  get secretKey(): string | null;
+  set secretKey(value: string | undefined | null);
+  get tls(): TlsConfigInit | null;
+  set tls(value: TlsConfigInit | undefined | null);
 }
 
 /** The `Response` class constructed in JS. */
@@ -92,6 +96,8 @@ export interface ConfigInit {
   shutdown?: Shutdown;
   logLevel?: string;
   cliColors?: boolean;
+  secretKey?: string;
+  tls?: TlsConfigInit;
 }
 
 export declare const DEBUG_PROFILE: string;
@@ -171,6 +177,8 @@ export interface RoutePatternInfo {
   isWildcard: boolean;
 }
 
+export declare const SECRET_KEY: string;
+
 /** NAPI `serve(options)` function. */
 export declare function serve(options: unknown): Server;
 
@@ -190,5 +198,12 @@ export interface StaticFile {
 }
 
 export declare const TEMP_DIR: string;
+
+export declare const TLS: string;
+
+export interface TlsConfigInit {
+  certs: string;
+  key: string;
+}
 
 export declare const WORKERS: string;

@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
+use napi::NapiValue;
 #[allow(deprecated)]
-use napi::JsFunction;
+use napi::{JsFunction, JsObject};
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -23,8 +24,25 @@ type HandlerTsfn =
     ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, RequestInput, Status, true, false, 0>;
 
 #[allow(deprecated)]
-fn to_js_function(val: Unknown) -> JsFunction {
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&val) }
+fn safe_to_js_function(value: &Unknown) -> napi::Result<JsFunction> {
+    if value.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(
+            Status::InvalidArg,
+            "Expected a function handler",
+        ));
+    }
+    unsafe { Ok(JsFunction::from_raw_unchecked(value.env(), value.raw())) }
+}
+
+#[allow(deprecated)]
+fn safe_to_js_object(value: &Unknown) -> napi::Result<JsObject> {
+    if value.get_type()? != ValueType::Object {
+        return Err(napi::Error::new(
+            Status::InvalidArg,
+            "Expected an object",
+        ));
+    }
+    unsafe { Ok(JsObject::from_raw_unchecked(value.env(), value.raw())) }
 }
 
 /// Wire type sent from Rust -> JS for every request.
@@ -298,15 +316,16 @@ const ALL_METHODS: &[Method] = &[
     Method::Options,
 ];
 
+#[allow(deprecated)]
 fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<Route>) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
+            let f = safe_to_js_function(&value)?;
             let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
-            let obj: Object = unsafe { std::mem::transmute_copy(&value) };
+            let obj = safe_to_js_object(&value)?;
             if obj.has_named_property("path")? {
                 let path: String = obj.get_named_property("path")?;
                 push_kind(
@@ -357,9 +376,10 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
 static SHUTDOWN: OnceLock<Mutex<Option<Shutdown>>> = OnceLock::new();
 
 /// NAPI `serve(options)` function.
+#[allow(deprecated)]
 #[napi]
 pub fn serve(options: Unknown) -> napi::Result<Server> {
-    let opts: Object = unsafe { std::mem::transmute_copy(&options) };
+    let opts = safe_to_js_object(&options)?;
     let port: u16 = opts.get_named_property::<Option<u32>>("port")?.unwrap_or(3000) as u16;
     let hostname: String = opts
         .get_named_property::<Option<String>>("hostname")?
@@ -371,26 +391,31 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
     let url = format!("http://{}:{}", hostname, port);
 
     let mut routes: Vec<Route> = Vec::new();
-    if let Ok(Some(table)) = opts.get_named_property::<Option<Object>>("routes") {
-        let names = table.get_property_names()?;
-        let len = names.get_array_length()?;
-        for i in 0..len {
-            let pattern: String = names.get_element(i)?;
-            let value: Unknown = table.get_named_property(&pattern)?;
-            mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+    if let Ok(Some(table)) = opts.get_named_property::<Option<Unknown>>("routes") {
+        if table.get_type()? == ValueType::Object {
+            let obj = safe_to_js_object(&table)?;
+            let names = obj.get_property_names()?;
+            let len = names.get_array_length()?;
+            for i in 0..len {
+                let pattern: String = names.get_element(i)?;
+                let value: Unknown = obj.get_named_property(&pattern)?;
+                mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+            }
         }
     }
 
     if let Ok(Some(fetch_val)) = opts.get_named_property::<Option<Unknown>>("fetch") {
-        let fetch_fn = to_js_function(fetch_val);
-        let tsfn = Arc::new(fetch_fn.create_threadsafe_function(|ctx| Ok(ctx.value))?);
-        for m in ALL_METHODS {
-            push_kind(
-                RouteKind::Fn(tsfn.clone()),
-                "/<_..>",
-                &[*m],
-                &mut routes,
-            );
+        if fetch_val.get_type()? == ValueType::Function {
+            let fetch_fn = safe_to_js_function(&fetch_val)?;
+            let tsfn = Arc::new(fetch_fn.create_threadsafe_function(|ctx| Ok(ctx.value))?);
+            for m in ALL_METHODS {
+                push_kind(
+                    RouteKind::Fn(tsfn.clone()),
+                    "/<_..>",
+                    &[*m],
+                    &mut routes,
+                );
+            }
         }
     }
 
@@ -440,9 +465,10 @@ fn routes() -> &'static Mutex<Vec<Route>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+#[allow(deprecated)]
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown) -> napi::Result<()> {
-    let f = to_js_function(handler);
+    let f = safe_to_js_function(&handler)?;
     let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
     let m: Method = method
         .parse()

@@ -50,6 +50,10 @@ pub const LOG_LEVEL: &'static str = "log_level";
 pub const SHUTDOWN: &'static str = "shutdown";
 #[napi]
 pub const CLI_COLORS: &'static str = "cli_colors";
+#[napi]
+pub const SECRET_KEY: &'static str = "secret_key";
+#[napi]
+pub const TLS: &'static str = "tls";
 
 #[derive(Clone)]
 #[napi(object)]
@@ -65,6 +69,13 @@ pub struct Shutdown {
     pub grace: Option<u32>,
     pub mercy: Option<u32>,
     pub force: Option<bool>,
+}
+
+#[derive(Clone)]
+#[napi(object)]
+pub struct TlsConfigInit {
+    pub certs: String,
+    pub key: String,
 }
 
 fn parse_log_level(s: &str) -> napi::Result<LogLevel> {
@@ -159,6 +170,8 @@ pub struct Config {
     shutdown: Shutdown,
     log_level: String,
     cli_colors: bool,
+    secret_key: Option<String>,
+    tls: Option<TlsConfigInit>,
 }
 
 #[napi]
@@ -218,6 +231,8 @@ impl Config {
             LOG_LEVEL.to_string(),
             SHUTDOWN.to_string(),
             CLI_COLORS.to_string(),
+            SECRET_KEY.to_string(),
+            TLS.to_string(),
         ]
     }
 
@@ -372,6 +387,24 @@ impl Config {
     pub fn set_cli_colors(&mut self, value: bool) {
         self.cli_colors = value;
     }
+
+    #[napi(getter)]
+    pub fn secret_key(&self) -> Option<String> {
+        self.secret_key.clone()
+    }
+    #[napi(setter)]
+    pub fn set_secret_key(&mut self, value: Option<String>) {
+        self.secret_key = value;
+    }
+
+    #[napi(getter)]
+    pub fn tls(&self) -> Option<TlsConfigInit> {
+        self.tls.clone()
+    }
+    #[napi(setter)]
+    pub fn set_tls(&mut self, value: Option<TlsConfigInit>) {
+        self.tls = value;
+    }
 }
 
 impl Config {
@@ -404,6 +437,8 @@ impl Config {
             },
             log_level: cfg.log_level.to_string(),
             cli_colors: cfg.cli_colors,
+            secret_key: None,
+            tls: None,
         }
     }
 
@@ -451,6 +486,12 @@ impl Config {
         if let Some(v) = init.cli_colors {
             self.cli_colors = v;
         }
+        if let Some(v) = init.secret_key {
+            self.secret_key = Some(v);
+        }
+        if let Some(v) = init.tls {
+            self.tls = Some(v);
+        }
         Ok(())
     }
 }
@@ -472,4 +513,6 @@ pub struct ConfigInit {
     pub shutdown: Option<Shutdown>,
     pub log_level: Option<String>,
     pub cli_colors: Option<bool>,
+    pub secret_key: Option<String>,
+    pub tls: Option<TlsConfigInit>,
 }

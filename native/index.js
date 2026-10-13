@@ -925,9 +925,11 @@ const {
   PORT,
   registerRoute,
   RELEASE_PROFILE,
+  SECRET_KEY,
   serve,
   SHUTDOWN,
   TEMP_DIR,
+  TLS,
   WORKERS,
 } = nativeBinding;
 export { Config };
@@ -952,8 +954,10 @@ export { parseRoutePattern };
 export { PORT };
 export { registerRoute };
 export { RELEASE_PROFILE };
+export { SECRET_KEY };
 export { serve };
 export { SHUTDOWN };
 export { TEMP_DIR };
+export { TLS };
 export { WORKERS };
 export const __napiBindingTarget = __napiLoadedBindingTarget;
