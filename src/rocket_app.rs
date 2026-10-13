@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
+#[allow(deprecated)]
 use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
@@ -135,8 +136,16 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
 
 type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
 
-fn to_js_function(handler: Unknown) -> JsFunction {
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+#[allow(deprecated)]
+fn to_js_function(handler: Unknown) -> Result<JsFunction> {
+    if handler.get_type()? == ValueType::Function {
+        Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
+    } else {
+        Err(Error::new(
+            Status::InvalidArg,
+            "expected a function handler",
+        ))
+    }
 }
 
 #[derive(Clone)]
@@ -250,7 +259,7 @@ impl Rocket {
         let method: Method = method
             .parse()
             .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let tsfn: HandlerTsfn = to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
@@ -264,7 +273,7 @@ impl Rocket {
     #[napi]
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
         let code: Option<u16> = code.map(|c| c as u16);
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let tsfn: HandlerTsfn = to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();

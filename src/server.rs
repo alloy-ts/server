@@ -3,11 +3,12 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
-use napi::JsFunction;
+#[allow(deprecated)]
+use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -126,10 +127,7 @@ pub fn file(path: String) -> StaticFile {
 enum RouteKind {
     Fn(Arc<HandlerTsfn>),
     Static(Arc<ResponsePayload>),
-    File {
-        path: String,
-        _cache: Arc<Mutex<Option<Vec<u8>>>>,
-    },
+    File { path: String },
 }
 
 #[derive(Clone)]
@@ -155,7 +153,7 @@ impl Handler for JsHandler {
                 RouteOutcome::Success(build_response(&output))
             }
             RouteKind::Static(payload) => RouteOutcome::Success(build_response(payload.as_ref())),
-            RouteKind::File { path, _cache: _ } => {
+            RouteKind::File { path } => {
                 match rocket::tokio::fs::read(path).await {
                     Ok(bytes) => {
                         let mut builder = RocketResponse::build();
@@ -282,14 +280,22 @@ const ALL_METHODS: &[Method] = &[
     Method::Options,
 ];
 
-fn to_js_function(handler: Unknown) -> JsFunction {
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+#[allow(deprecated)]
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? == ValueType::Function {
+        Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
+    } else {
+        Err(napi::Error::new(
+            Status::InvalidArg,
+            "expected a function handler",
+        ))
+    }
 }
 
 fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<Route>) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
+            let f = to_js_function(value)?;
             let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
@@ -297,15 +303,7 @@ fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<
             let obj: Object = unsafe { value.clone().cast()? };
             if obj.has_named_property("path")? {
                 if let Some(path) = obj.get_named_property::<Option<String>>("path")? {
-                    push_kind(
-                        RouteKind::File {
-                            path,
-                            _cache: Arc::new(Mutex::new(None)),
-                        },
-                        pattern,
-                        methods,
-                        out,
-                    );
+                    push_kind(RouteKind::File { path }, pattern, methods, out);
                     return Ok(());
                 }
             }
@@ -349,8 +347,6 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-static SHUTDOWN: OnceLock<Mutex<Option<Shutdown>>> = OnceLock::new();
-
 #[napi]
 pub fn serve(options: Unknown) -> napi::Result<Server> {
     let mut port: u16 = 3000;
@@ -387,7 +383,7 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
         if obj.has_named_property("fetch")? {
             if let Some(fetch) = obj.get_named_property::<Option<Unknown>>("fetch")? {
                 if fetch.get_type()? == ValueType::Function {
-                    let f = to_js_function(fetch);
+                    let f = to_js_function(fetch)?;
                     let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
                     let tsfn_arc = Arc::new(tsfn);
                     for m in ALL_METHODS {
@@ -407,7 +403,6 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
         "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
         other => other.parse().unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
-    let url = format!("http://{}:{}", hostname, port);
 
     let mut config = Config::default();
     config.port = port;
@@ -415,24 +410,39 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
 
     let rocket = rocket::build().configure(config).mount("/", routes);
 
+    let (tx, rx) = std::sync::mpsc::channel();
+
     std::thread::spawn(move || {
         let rt = rocket::tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
         rt.block_on(async move {
-            if let Ok(ignited) = rocket.ignite().await {
-                let shutdown = ignited.shutdown();
-                let mutex = SHUTDOWN.get_or_init(|| Mutex::new(None));
-                *mutex.lock().unwrap() = Some(shutdown);
-                let _ = ignited.launch().await;
+            match rocket.ignite().await {
+                Ok(ignited) => {
+                    let bound_port = ignited.config().port;
+                    let shutdown = ignited.shutdown();
+                    let _ = tx.send(Ok((bound_port, shutdown)));
+                    let _ = ignited.launch().await;
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
             }
         });
     });
 
+    let (bound_port, shutdown) = rx
+        .recv()
+        .map_err(|_| napi::Error::new(Status::GenericFailure, "Failed to start Rocket server"))?
+        .map_err(|e| napi::Error::new(Status::GenericFailure, e))?;
+
+    let url = format!("http://{}:{}", hostname, bound_port);
+
     Ok(Server {
         url,
-        port: port as u32,
+        port: bound_port as u32,
+        shutdown: Arc::new(Mutex::new(Some(shutdown))),
     })
 }
 
@@ -440,22 +450,21 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
 pub struct Server {
     pub url: String,
     pub port: u32,
+    shutdown: Arc<Mutex<Option<Shutdown>>>,
 }
 
 #[napi]
 impl Server {
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(mutex) = SHUTDOWN.get() {
-            if let Some(shutdown) = mutex.lock().unwrap().take() {
-                shutdown.notify();
-            }
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
         }
         Ok(())
     }
 }
 
-static ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
+static ROUTES: std::sync::OnceLock<Mutex<Vec<Route>>> = std::sync::OnceLock::new();
 
 fn global_routes() -> &'static Mutex<Vec<Route>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
@@ -464,7 +473,7 @@ fn global_routes() -> &'static Mutex<Vec<Route>> {
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown) -> napi::Result<()> {
     if handler.get_type()? == ValueType::Function {
-        let f = to_js_function(handler);
+        let f = to_js_function(handler)?;
         let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let m: Method = method
             .parse()
