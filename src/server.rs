@@ -437,25 +437,65 @@ static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 /// route, spawns it on the tokio runtime, and returns a [`Server`] handle
 /// immediately (mirroring Bun's synchronous `serve` return).
 ///
-/// `routes` and `fetch` are taken as direct parameters (a JS object / function
-/// cannot be a `#[napi(object)]` struct field); `options` carries the scalar
-/// config (`port`, `hostname`, `unix`).
+/// Accepts either a Bun/Alloy single options object `{ routes, fetch, port, hostname, unix }`
+/// or the 3-argument signature `serve(routes, fetch, options)`.
 #[napi]
 pub fn serve(
-    routes: Option<Unknown<'_>>,
-    fetch: Option<Unknown<'_>>,
-    options: Option<ServeOptions>,
+    routes_or_options: Option<Unknown<'_>>,
+    fetch_arg: Option<Unknown<'_>>,
+    options_arg: Option<ServeOptions>,
 ) -> napi::Result<Server> {
-    let options = options.unwrap_or_else(|| ServeOptions {
-        port: None,
-        hostname: None,
-        unix: None,
-    });
-    let port = options.port.unwrap_or(3000) as u16;
-    let hostname = options
-        .hostname
-        .clone()
-        .unwrap_or_else(|| "0.0.0.0".to_string());
+    let mut routes_val: Option<Unknown<'_>> = None;
+    let mut fetch_val: Option<Unknown<'_>> = fetch_arg;
+    let mut port_val: Option<u32> = options_arg.as_ref().and_then(|o| o.port);
+    let mut hostname_val: Option<String> = options_arg.as_ref().and_then(|o| o.hostname.clone());
+    let mut _unix_val: Option<String> = options_arg.as_ref().and_then(|o| o.unix.clone());
+
+    if let Some(ref arg1) = routes_or_options {
+        if arg1.get_type()? == ValueType::Object {
+            let obj: Object = unsafe { arg1.clone().cast()? };
+            let has_routes = obj.has_own_property("routes")?;
+            let has_fetch = obj.has_own_property("fetch")?;
+            let has_port = obj.has_own_property("port")?;
+            let has_hostname = obj.has_own_property("hostname")?;
+            let has_unix = obj.has_own_property("unix")?;
+
+            if has_routes || has_fetch || has_port || has_hostname || has_unix {
+                if has_routes {
+                    routes_val = Some(obj.get_named_property("routes")?);
+                }
+                if has_fetch {
+                    fetch_val = Some(obj.get_named_property("fetch")?);
+                }
+                if has_port {
+                    if let Ok(p) = obj.get_named_property::<Option<u32>>("port") {
+                        if p.is_some() {
+                            port_val = p;
+                        }
+                    }
+                }
+                if has_hostname {
+                    hostname_val = obj.get_named_property::<Option<String>>("hostname").ok().flatten();
+                }
+                if has_unix {
+                    _unix_val = obj.get_named_property::<Option<String>>("unix").ok().flatten();
+                }
+            } else {
+                routes_val = Some(arg1.clone());
+            }
+        } else {
+            routes_val = Some(arg1.clone());
+        }
+    }
+
+    let env_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|p| p.parse::<u32>().ok());
+
+    let port = port_val.or(env_port).unwrap_or(3000) as u16;
+    let hostname = hostname_val.unwrap_or_else(|| "0.0.0.0".to_string());
     let address: IpAddr = match hostname.as_str() {
         "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
         other => other
@@ -468,7 +508,7 @@ pub fn serve(
     if let Ok(mut reg) = self::routes().lock() {
         out.append(&mut *reg);
     }
-    if let Some(table) = routes {
+    if let Some(table) = routes_val {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
@@ -480,7 +520,7 @@ pub fn serve(
     }
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
-    if let Some(fetch) = fetch {
+    if let Some(fetch) = fetch_val {
         let f = to_js_function(fetch);
         let tsfn: HandlerTsfn = f
             .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
