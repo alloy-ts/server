@@ -294,25 +294,44 @@ fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
-            let v = value.clone();
-            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
+            let obj: Object = unsafe { value.clone().cast()? };
+            if obj.has_named_property("path")? {
+                if let Some(path) = obj.get_named_property::<Option<String>>("path")? {
+                    push_kind(
+                        RouteKind::File {
+                            path,
+                            _cache: Arc::new(Mutex::new(None)),
+                        },
+                        pattern,
+                        methods,
+                        out,
+                    );
+                    return Ok(());
+                }
+            }
+            if obj.has_named_property("status")? {
+                let status: u32 = obj.get_named_property("status").unwrap_or(200);
+                let headers: Vec<(String, String)> = obj.get_named_property("headers").unwrap_or_default();
+                let body: Option<Buffer> = obj.get_named_property("body").unwrap_or(None);
                 push_kind(
-                    RouteKind::File {
-                        path: fr.path,
-                        _cache: Arc::new(Mutex::new(None)),
-                    },
+                    RouteKind::Static(Arc::new(ResponsePayload {
+                        status,
+                        headers,
+                        body,
+                    })),
                     pattern,
                     methods,
                     out,
                 );
-            } else if let Ok(resp) = unsafe { v.clone().cast::<ResponsePayload>() } {
-                push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
-            } else {
-                let map: HashMap<String, Unknown> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
-                        .parse()
-                        .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+                return Ok(());
+            }
+
+            let names: Object = obj.get_property_names()?;
+            let len = names.get_array_length()?;
+            for i in 0..len {
+                let method_name: String = names.get_element(i)?;
+                if let Ok(m) = method_name.parse::<Method>() {
+                    let method_value: Unknown = obj.get_named_property(&method_name)?;
                     mount_value(method_value, pattern, &[m], out)?;
                 }
             }
@@ -404,9 +423,8 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
         rt.block_on(async move {
             if let Ok(ignited) = rocket.ignite().await {
                 let shutdown = ignited.shutdown();
-                if let Some(mutex) = SHUTDOWN.get() {
-                    *mutex.lock().unwrap() = Some(shutdown);
-                }
+                let mutex = SHUTDOWN.get_or_init(|| Mutex::new(None));
+                *mutex.lock().unwrap() = Some(shutdown);
                 let _ = ignited.launch().await;
             }
         });
@@ -445,13 +463,15 @@ fn global_routes() -> &'static Mutex<Vec<Route>> {
 
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown) -> napi::Result<()> {
-    let f = to_js_function(handler);
-    let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
-    let m: Method = method
-        .parse()
-        .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-    let mut routes = global_routes().lock().unwrap();
-    push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
+    if handler.get_type()? == ValueType::Function {
+        let f = to_js_function(handler);
+        let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let m: Method = method
+            .parse()
+            .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+        let mut routes = global_routes().lock().unwrap();
+        push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
+    }
     Ok(())
 }
 
