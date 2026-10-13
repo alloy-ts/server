@@ -518,6 +518,99 @@ pub fn serve(
     })
 }
 
+/// Application builder mirroring Rocket's `rocket::build()` and route macros.
+#[napi]
+pub struct App {
+    port: u32,
+}
+
+#[napi]
+impl App {
+    /// Create a new Rocket Application instance (mirroring `rocket::build()`).
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self { port: 3000 }
+    }
+
+    /// Attach a `GET` route handler.
+    #[napi]
+    pub fn get(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("GET".to_string(), path, handler)
+    }
+
+    /// Attach a `POST` route handler.
+    #[napi]
+    pub fn post(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("POST".to_string(), path, handler)
+    }
+
+    /// Attach a `PUT` route handler.
+    #[napi]
+    pub fn put(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PUT".to_string(), path, handler)
+    }
+
+    /// Attach a `DELETE` route handler.
+    #[napi]
+    pub fn delete(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("DELETE".to_string(), path, handler)
+    }
+
+    /// Attach a `PATCH` route handler.
+    #[napi]
+    pub fn patch(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PATCH".to_string(), path, handler)
+    }
+
+    /// Build, ignite, and launch the server in the background (mirroring `#[launch]`).
+    #[napi]
+    pub fn launch(&mut self) -> napi::Result<()> {
+        let registered_routes = {
+            let mut guard = routes().lock().unwrap();
+            std::mem::take(&mut *guard)
+        };
+
+        let mut config = Config::default();
+        config.port = self.port as u16;
+
+        let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+        SHUTDOWN.get_or_init(|| slot.clone());
+
+        let rocket = rocket::build()
+            .configure(config)
+            .mount("/", registered_routes)
+            .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+                Box::pin(async move {
+                    *slot.lock().unwrap() = Some(orbit.shutdown());
+                })
+            }));
+
+        std::thread::spawn(move || {
+            if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(async move {
+                    let _ = rocket.launch().await;
+                });
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Stop the server.
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(slot) = SHUTDOWN.get() {
+            if let Some(shutdown) = slot.lock().unwrap().take() {
+                shutdown.notify();
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
 #[napi(object)]
 pub struct ServeOptions {
