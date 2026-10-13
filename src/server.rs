@@ -203,7 +203,7 @@ enum RouteKind {
     Static(Arc<ResponsePayload>),
     File {
         path: String,
-        cache: Arc<Mutex<Option<Vec<u8>>>>,
+        _cache: Arc<Mutex<Option<Vec<u8>>>>,
     },
 }
 
@@ -233,7 +233,7 @@ impl Handler for JsHandler {
                 RouteOutcome::Success(build_response(&output))
             }
             RouteKind::Static(payload) => RouteOutcome::Success(build_response(payload.as_ref())),
-            RouteKind::File { path, cache: _ } => match rocket::tokio::fs::read(path).await {
+            RouteKind::File { path, _cache: _ } => match rocket::tokio::fs::read(path).await {
                 Ok(bytes) => {
                     let mut builder = RocketResponse::build();
                     builder.sized_body(bytes.len(), Cursor::new(bytes));
@@ -315,7 +315,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
 /// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 1);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -400,27 +403,33 @@ fn mount_value<'env>(
                 push_kind(
                     RouteKind::File {
                         path: fr.path,
-                        cache: Arc::new(Mutex::new(None)),
+                        _cache: Arc::new(Mutex::new(None)),
                     },
                     pattern,
                     methods,
                     out,
                 );
-            } else if let Ok(resp) = unsafe { v.clone().cast::<ResponsePayload>() } {
-                push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
-            } else {
-                // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
-                        .parse()
-                        .map_err(|_| {
-                            napi::Error::new(
-                                Status::GenericFailure,
-                                format!("invalid method: {method}"),
-                            )
-                        })?;
-                    mount_value(method_value, pattern, &[m], out)?;
+            } else if let Ok(table) = unsafe { v.clone().cast::<JsObject>() } {
+                if table.has_named_property("status")? {
+                    let status: u32 = table.get_named_property("status")?;
+                    let body: Option<Vec<u8>> = table.get_named_property("body").ok().flatten();
+                    let headers: Vec<Header> = table.get_named_property("headers").unwrap_or_default();
+                    let resp = ResponsePayload { status, headers, body };
+                    push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
+                } else {
+                    // Per-method map: `{ GET, POST, ... }`.
+                    let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
+                    for (method, method_value) in map {
+                        let m: Method = method
+                            .parse()
+                            .map_err(|_| {
+                                napi::Error::new(
+                                    Status::GenericFailure,
+                                    format!("invalid method: {method}"),
+                                )
+                            })?;
+                        mount_value(method_value, pattern, &[m], out)?;
+                    }
                 }
             }
         }
@@ -463,7 +472,6 @@ pub fn serve(
         hostname: None,
         unix: None,
     });
-    let port = options.port.unwrap_or(3000) as u16;
     let hostname = options
         .hostname
         .clone()
@@ -474,6 +482,14 @@ pub fn serve(
             .parse()
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
+    let mut port = options.port.unwrap_or(3000) as u16;
+    if port == 0 {
+        if let Ok(listener) = std::net::TcpListener::bind((address, 0)) {
+            if let Ok(addr) = listener.local_addr() {
+                port = addr.port();
+            }
+        }
+    }
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
