@@ -14,7 +14,7 @@ async function run() {
   await cli.build({
     platform: true,
     esm: true,
-    outputDir: "./dist",
+    outputDir: "native",
     release: isRelease,
     target,
     useNapiCross,
