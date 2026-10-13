@@ -4,9 +4,9 @@
 //! *procedural macros* and cannot cross the N-API boundary. This module is the
 //! NAPI equivalent of the *responsibilities* those macros perform:
 //!
-//! * `#[get("/p")]` / `routes!`  -> [`serve`] + the route-table parser, which at
-//!   runtime build the same `&[Route]`-equivalent that Rocket's codegen emits,
-//!   except the handler bodies live in JavaScript.
+//! * `#[get("/p")]` / `routes!`  -> [`serve`], [`App`] + the route-table parser,
+//!   which at runtime build the same `&[Route]`-equivalent that Rocket's codegen
+//!   emits, except the handler bodies live in JavaScript.
 //! * `uri!` type-checked construction -> the TS-side `uri()` builder (see the
 //!   codegen layer); this module only carries the request/response wire types.
 //!
@@ -15,7 +15,7 @@
 //! can run on any Rocket worker thread) and builds a [`rocket::Response`] from
 //! the JS return value, mirroring Rocket's generated-handler semantics.
 //!
-//! The public surface below (`serve`, `Alloy`, `Bun`, `Response`, `file`,
+//! The public surface below (`serve`, `App`, `Alloy`, `Bun`, `Response`, `file`,
 //! `response`, `responseJson`, `responseRedirect`, `register_route`, `Server`)
 //! is the single source of truth for Bun/Alloy-compatible HTTP servers powered
 //! by Rocket.
@@ -172,6 +172,169 @@ pub struct StaticFile {
 #[napi]
 pub fn file(path: String) -> StaticFile {
     StaticFile { path }
+}
+
+/// Express/Rocket-style application builder class `App`.
+///
+/// Provides a 1:1 object-oriented API counterpart to Rocket's `#[get]`, `routes!`,
+/// and `#[launch]`:
+///
+///   `rocket::build()`        -> `new App()`
+///   `#[get("/")] fn hello`   -> `app.get("/", ...)`
+///   `#[launch] ... .mount()` -> `app.launch()`
+#[napi]
+pub struct App {
+    routes: Arc<Mutex<Vec<(Method, String, Arc<HandlerTsfn>)>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self {
+            routes: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn add_route(&self, method: Method, path: String, handler: Unknown) -> napi::Result<()> {
+        let tsfn = create_handler_tsfn(handler)?;
+        self.routes
+            .lock()
+            .unwrap()
+            .push((method, path, Arc::new(tsfn)));
+        Ok(())
+    }
+
+    #[napi]
+    pub fn get(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Get, path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Post, path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Put, path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Delete, path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Patch, path, handler)
+    }
+
+    #[napi]
+    pub fn head(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Head, path, handler)
+    }
+
+    #[napi]
+    pub fn options(&self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.add_route(Method::Options, path, handler)
+    }
+
+    #[napi]
+    pub fn mount(&self, _base: String, method: String, path: String, handler: Unknown) -> napi::Result<()> {
+        let m: Method = method
+            .parse()
+            .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+        self.add_route(m, path, handler)
+    }
+
+    #[napi]
+    pub fn launch(&self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let options = options.unwrap_or_else(|| ServeOptions {
+            port: None,
+            hostname: None,
+            unix: None,
+        });
+
+        let port = if let Some(p) = options.port {
+            if p == 0 {
+                let hostname_str = options.hostname.as_deref().unwrap_or("0.0.0.0");
+                let addr = if hostname_str == "localhost" {
+                    "127.0.0.1"
+                } else {
+                    hostname_str
+                };
+                let listener = std::net::TcpListener::bind(format!("{}:0", addr))
+                    .or_else(|_| std::net::TcpListener::bind("127.0.0.1:0"))
+                    .map_err(|e| napi::Error::new(Status::GenericFailure, format!("Failed to bind port 0: {e}")))?;
+                let bound_port = listener
+                    .local_addr()
+                    .map_err(|e| napi::Error::new(Status::GenericFailure, format!("Failed to get local port: {e}")))?
+                    .port();
+                drop(listener);
+                bound_port
+            } else {
+                p as u16
+            }
+        } else {
+            std::env::var("BUN_PORT")
+                .ok()
+                .and_then(|v| v.parse::<u16>().ok())
+                .or_else(|| std::env::var("PORT").ok().and_then(|v| v.parse::<u16>().ok()))
+                .or_else(|| std::env::var("NODE_PORT").ok().and_then(|v| v.parse::<u16>().ok()))
+                .unwrap_or(3000)
+        };
+
+        let hostname = options.hostname.unwrap_or_else(|| "0.0.0.0".to_string());
+        let address: IpAddr = match hostname.as_str() {
+            "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            other => other
+                .parse()
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+        let display_host = if hostname == "0.0.0.0" { "localhost" } else { &hostname };
+        let url = format!("http://{}:{}", display_host, port);
+
+        let mut out: Vec<Route> = Vec::new();
+        let guard = self.routes.lock().unwrap();
+        for (m, path, tsfn) in guard.iter() {
+            push_kind(RouteKind::Fn(tsfn.clone()), path, &[*m], &mut out);
+        }
+
+        let mut config = Config::default();
+        config.port = port;
+        config.address = address;
+
+        let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+        let slot_clone = slot.clone();
+
+        let rocket = rocket::build()
+            .configure(config)
+            .mount("/", out)
+            .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+                Box::pin(async move {
+                    *slot_clone.lock().unwrap() = Some(orbit.shutdown());
+                })
+            }));
+
+        std::thread::spawn(move || {
+            if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(async move {
+                    let _ = rocket.launch().await;
+                });
+            }
+        });
+
+        Ok(Server {
+            url,
+            port: port as u32,
+            unix: options.unix,
+            shutdown: slot,
+        })
+    }
 }
 
 /// Struct exposing Bun / Alloy runtime compatibility namespace `Alloy`.
@@ -444,9 +607,8 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-/// Shared shutdown handle.
+/// Shared shutdown handle per server instance.
 type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
-static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
 /// NAPI equivalent of `Alloy.serve(options)` or `serve(routes, fetch, options)`.
 #[napi]
@@ -567,14 +729,14 @@ pub fn serve(
     config.address = address;
 
     let slot: ShutdownSlot = Arc::new(Mutex::new(None));
-    SHUTDOWN.get_or_init(|| slot.clone());
+    let slot_clone = slot.clone();
 
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
             Box::pin(async move {
-                *slot.lock().unwrap() = Some(orbit.shutdown());
+                *slot_clone.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
 
@@ -593,6 +755,7 @@ pub fn serve(
         url,
         port: port as u32,
         unix: unix_val,
+        shutdown: slot,
     })
 }
 
@@ -610,6 +773,7 @@ pub struct Server {
     pub url: String,
     pub port: u32,
     pub unix: Option<String>,
+    shutdown: ShutdownSlot,
 }
 
 #[napi]
@@ -617,10 +781,8 @@ impl Server {
     /// Gracefully stop the server.
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(slot) = SHUTDOWN.get() {
-            if let Some(shutdown) = slot.lock().unwrap().take() {
-                shutdown.notify();
-            }
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
         }
         Ok(())
     }
