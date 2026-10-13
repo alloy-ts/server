@@ -7,10 +7,16 @@ autobins = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["tls", "mtls", "secrets"]
+tls = ["rocket/tls"]
+mtls = ["rocket/mtls", "tls"]
+secrets = ["rocket/secrets"]
+
 [dependencies]
 napi = { version = "3.14.2", features = ["tokio_rt", "napi4", "compat-mode", "serde-json"] }
 napi-derive = "3.6.12"
-rocket = "0.5.1"
+rocket = { version = "0.5.1", features = ["tls", "mtls", "secrets"] }
 serde_json = "1"
 
 [build-dependencies]
