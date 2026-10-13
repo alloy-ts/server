@@ -510,6 +510,69 @@ impl Alloy {
     }
 }
 
+/// High-level Rocket application builder mirroring `rocket::build()`.
+#[napi]
+#[derive(Default)]
+pub struct App {}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        App {}
+    }
+
+    #[napi]
+    pub fn get(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn head(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("HEAD".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn options(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        register_route("OPTIONS".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn mount(&self, base: String, method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        let full_path = if base == "/" {
+            path
+        } else {
+            format!("{}/{}", base.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
+        register_route(method, full_path, handler)
+    }
+
+    #[napi]
+    pub fn launch(&self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        serve_internal(None, None, options)
+    }
+}
+
 /// Resolve port from options -> environment variables ($BUN_PORT, $PORT, $NODE_PORT) -> default 3000
 fn resolve_port(options_port: Option<u32>) -> u16 {
     if let Some(p) = options_port {
