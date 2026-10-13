@@ -117,6 +117,30 @@ describe("Rocket server NAPI bindings", () => {
       expect(() => server?.stop()).not.toThrow();
     });
 
+    test("serve supports single options object format serve({ routes, fetch, port })", async () => {
+      const s = serve({
+        routes: {
+          "/single-obj": response("SingleObjOK"),
+        },
+        async fetch(req: RequestInput) {
+          return response(`Fallback ${req.path}`, { status: 404 });
+        },
+        port: 0,
+        hostname: "127.0.0.1",
+      });
+
+      expect(s.port).toBeGreaterThan(0);
+      expect(s.url).toBe(`http://127.0.0.1:${s.port}`);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const res = await fetch(`${s.url}/single-obj`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("SingleObjOK");
+
+      s.stop();
+    });
+
     test("serve with port 0 binds to a random port", async () => {
       const randomServer = serve(
         {

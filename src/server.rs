@@ -434,15 +434,68 @@ static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 /// config (`port`, `hostname`, `unix`).
 #[napi]
 pub fn serve(
-    routes: Option<Unknown<'_>>,
+    routes_or_options: Option<Unknown<'_>>,
     fetch: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
 ) -> napi::Result<Server> {
-    let options = options.unwrap_or_else(|| ServeOptions {
+    let mut routes_val: Option<Unknown<'_>> = None;
+    let mut fetch_val: Option<Unknown<'_>> = fetch;
+    let mut opts_val: ServeOptions = options.unwrap_or_else(|| ServeOptions {
         port: None,
         hostname: None,
         unix: None,
     });
+
+    if let Some(arg) = routes_or_options {
+        if arg.get_type()? == ValueType::Object {
+            let obj: Object = unsafe { arg.clone().cast()? };
+            let has_routes = obj.has_named_property("routes")?;
+            let has_fetch = obj.has_named_property("fetch")?;
+            let has_port = obj.has_named_property("port")?;
+            let has_hostname = obj.has_named_property("hostname")?;
+            let has_unix = obj.has_named_property("unix")?;
+
+            if has_routes || has_fetch || has_port || has_hostname || has_unix {
+                if has_routes {
+                    let r: Unknown<'_> = obj.get_named_property("routes")?;
+                    if r.get_type()? != ValueType::Undefined && r.get_type()? != ValueType::Null {
+                        routes_val = Some(r);
+                    }
+                }
+                if has_fetch {
+                    let f: Unknown<'_> = obj.get_named_property("fetch")?;
+                    if f.get_type()? == ValueType::Function {
+                        fetch_val = Some(f);
+                    }
+                }
+                if has_port {
+                    if let Ok(p) = obj.get_named_property::<Option<u32>>("port") {
+                        if p.is_some() {
+                            opts_val.port = p;
+                        }
+                    }
+                }
+                if has_hostname {
+                    if let Ok(h) = obj.get_named_property::<Option<String>>("hostname") {
+                        if h.is_some() {
+                            opts_val.hostname = h;
+                        }
+                    }
+                }
+                if has_unix {
+                    if let Ok(u) = obj.get_named_property::<Option<String>>("unix") {
+                        if u.is_some() {
+                            opts_val.unix = u;
+                        }
+                    }
+                }
+            } else {
+                routes_val = Some(arg);
+            }
+        } else {
+            routes_val = Some(arg);
+        }
+    }
 
     let default_port = std::env::var("BUN_PORT")
         .or_else(|_| std::env::var("PORT"))
@@ -451,8 +504,8 @@ pub fn serve(
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(3000);
 
-    let requested_port = options.port.map(|p| p as u16).unwrap_or(default_port);
-    let hostname = options
+    let requested_port = opts_val.port.map(|p| p as u16).unwrap_or(default_port);
+    let hostname = opts_val
         .hostname
         .clone()
         .unwrap_or_else(|| "0.0.0.0".to_string());
@@ -463,13 +516,13 @@ pub fn serve(
             .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
     };
 
-    let unix_socket = options.unix.clone();
+    let unix_socket = opts_val.unix.clone();
 
     let mut out: Vec<Route> = Vec::new();
     if let Ok(mut guard) = get_registered_routes().lock() {
         out.append(&mut *guard);
     }
-    if let Some(table) = routes {
+    if let Some(table) = routes_val {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
@@ -481,7 +534,7 @@ pub fn serve(
     }
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
-    if let Some(fetch) = fetch {
+    if let Some(fetch) = fetch_val {
         let f = to_js_function(fetch);
         let tsfn: HandlerTsfn =
             f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
