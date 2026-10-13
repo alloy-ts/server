@@ -348,7 +348,7 @@ fn collect_routes(value: Unknown) -> napi::Result<Vec<(Option<String>, RouteHand
 static SHUTDOWN: OnceLock<Mutex<Option<Shutdown>>> = OnceLock::new();
 
 #[napi]
-pub fn serve(options: ServeOptions) -> napi::Result<Server> {
+pub fn serve(options: ServeOptions<'_>) -> napi::Result<Server> {
     let port = options.port.unwrap_or(3000) as u16;
     let hostname = options
         .hostname
@@ -412,11 +412,19 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
     config.address = address;
 
     let rocket = rocket::build().configure(config).mount("/", rocket_routes);
-    rocket::tokio::spawn(async move {
-        if let Ok(ignited) = rocket.ignite().await {
-            let shutdown = ignited.shutdown();
-            *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);
-            let _ = ignited.launch().await;
+
+    std::thread::spawn(move || {
+        let rt = rocket::tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build();
+        if let Ok(rt) = rt {
+            rt.block_on(async move {
+                if let Ok(ignited) = rocket.ignite().await {
+                    let shutdown = ignited.shutdown();
+                    *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);
+                    let _ = ignited.launch().await;
+                }
+            });
         }
     });
 
