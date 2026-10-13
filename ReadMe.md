@@ -24,7 +24,10 @@ Node.js (TypeScript) NAPI bindings for the Rocket web framework and code generat
 import { Alloy, response, responseJson, responseRedirect, file } from "@alloy-ts/server";
 
 const server = Alloy.serve({
+  // Port defaults to $BUN_PORT, $PORT, $NODE_PORT or 3000. Set port: 0 for dynamic random port.
   port: 3000,
+  hostname: "127.0.0.1",
+
   routes: {
     // Static routes
     "/api/status": response("OK"),
@@ -38,12 +41,15 @@ const server = Alloy.serve({
       POST: async (req) => responseJson({ created: true }),
     },
 
-    // Wildcard route
+    // Wildcard route for all unmatched /api/* paths
     "/api/*": responseJson({ message: "Not found" }, { status: 404 }),
 
     // Redirects & Static Files
     "/blog/hello": responseRedirect("/blog/hello/world"),
     "/favicon.ico": file("./favicon.ico"),
+
+    // HTML string or import routes
+    "/": "<h1>Welcome to Alloy Web Server!</h1>",
   },
 
   fetch(req) {
@@ -51,7 +57,15 @@ const server = Alloy.serve({
   },
 });
 
-console.log(`Server running at ${server.url}`);
+console.log(`Server running at ${server.url} (port: ${server.port})`);
+```
+
+### Examples & Demos
+
+Check out `examples/server.ts` for a complete runnable demo:
+
+```bash
+npx tsx examples/server.ts
 ```
 
 ---
