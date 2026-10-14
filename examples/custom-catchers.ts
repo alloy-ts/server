@@ -1,13 +1,13 @@
-import { Rocket, responseJson } from "../dist/index.js";
+import { Server, responseJson } from "../dist/index.js";
 
-// Demonstrating custom Rocket catchers via low-level Rocket NAPI class
-const rocket = new Rocket({
+// Demonstrating custom catchers via low-level Server NAPI class
+const server = Server.custom({
   port: 8000,
   address: "127.0.0.1",
 });
 
 // Register a 404 catcher handler
-rocket.register("/", 404, (_req: any) => {
+server.register("/", 404, (_req: any) => {
   return responseJson(
     {
       error: "Not Found",
@@ -18,7 +18,7 @@ rocket.register("/", 404, (_req: any) => {
 });
 
 // Register a 500 internal server error catcher
-rocket.register("/", 500, (_req: any) => {
+server.register("/", 500, (_req: any) => {
   return responseJson(
     {
       error: "Internal Server Error",
@@ -28,16 +28,16 @@ rocket.register("/", 500, (_req: any) => {
   );
 });
 
-// Mount a route that triggers 404/forwarding
-rocket.mount("/", "GET", "/hello", async () => {
+// Mount a route
+server.mount("/", "GET", "/hello", async () => {
   return {
     status: 200,
     headers: { "Content-Type": "text/plain" },
-    body: Array.from(Buffer.from("Hello from Rocket Catcher Example!")),
+    body: Array.from(Buffer.from("Hello from Catcher Example!")),
   };
 });
 
-console.log("Rocket instance configured with custom 404 and 500 catchers at http://127.0.0.1:8000");
+console.log("Server instance configured with custom 404 and 500 catchers at http://127.0.0.1:8000");
 
 if (process.env.NODE_ENV === "test") {
   // Configured for dry run
