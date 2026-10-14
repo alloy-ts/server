@@ -197,16 +197,10 @@ impl Handler for JsHandler {
                 let output = match tsfn.call_async(Ok(input)).await {
                     Ok(Either::A(promise)) => match promise.await {
                         Ok(payload) => payload,
-                        Err(e) => {
-                            eprintln!("[ERR A] {:?}", e);
-                            return RouteOutcome::Error(RocketStatus::InternalServerError);
-                        }
+                        Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
                     },
                     Ok(Either::B(payload)) => payload,
-                    Err(e) => {
-                        eprintln!("[ERR B] {:?}", e);
-                        return RouteOutcome::Error(RocketStatus::InternalServerError);
-                    }
+                    Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
                 };
                 RouteOutcome::Success(build_response(&output))
             }
@@ -352,8 +346,10 @@ const ALL_METHODS: &[Method] = &[
 
 #[allow(deprecated)]
 fn create_handler_tsfn(env: &Env, handler: Unknown) -> napi::Result<HandlerTsfn> {
-    let wrapper_factory: Function = env.run_script("(f) => (err, req) => f(err ? err : (Array.isArray(req) ? req[0] : req))")?;
-    let wrapped_val: Unknown = wrapper_factory.call(handler)?;
+    let wrapper_factory: Unknown = env.run_script("(f) => (err, req) => f(err ? err : (Array.isArray(req) ? req[0] : req))")?;
+    let wrapper_factory_fn = to_js_function(wrapper_factory);
+    let handler_fn = to_js_function(handler);
+    let wrapped_val: Unknown = wrapper_factory_fn.call(None, &[handler_fn])?;
     let f = to_js_function(wrapped_val);
     f.create_threadsafe_function::<RequestInput, (serde_json::Value,), Either<Promise<ResponsePayload>, ResponsePayload>, Status, _, true, false, 0>(
         |ctx| {
@@ -399,6 +395,22 @@ fn mount_value<'env>(
                     path,
                     _cache: Arc::new(Mutex::new(None)),
                 },
+                pattern,
+                methods,
+                out,
+            );
+            return Ok(());
+        }
+        if let Ok(html) = obj.get_named_property::<String>("html") {
+            push_kind(
+                RouteKind::Static(Arc::new(ResponsePayload {
+                    status: 200,
+                    headers: vec![Header {
+                        name: "Content-Type".to_string(),
+                        value: "text/html; charset=utf-8".to_string(),
+                    }],
+                    body: Some(Buffer::from(html.into_bytes())),
+                })),
                 pattern,
                 methods,
                 out,
