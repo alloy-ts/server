@@ -1,4 +1,4 @@
-import { Alloy, Response } from "../src/main.ts";
+import { serve, Response } from "../dist/index.js";
 
 interface Post {
   id: string;
@@ -10,8 +10,8 @@ const postsDb: Map<string, Post> = new Map([
   ["1", { id: "1", title: "Welcome to Rocket", content: "Rocket web framework in TypeScript" }],
 ]);
 
-const server = Alloy.serve({
-  routes: {
+const server = serve(
+  {
     "/api/posts": {
       // List posts
       GET: () => Response.json(Array.from(postsDb.values())),
@@ -39,12 +39,8 @@ const server = Alloy.serve({
       return Response.json(post);
     },
   },
-
-  fetch(req: any) {
-    return Response.json({ error: `Path ${req.path} not found` }, { status: 404 });
-  },
-
-  port: 3000,
-});
+  (req: any) => Response.json({ error: `Path ${req.path} not found` }, { status: 404 }),
+  { port: 3000 },
+);
 
 console.log(`REST API running at ${server.url}`);

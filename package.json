@@ -9,15 +9,14 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/main.mjs",
+    ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "node build.ts && vp pack",
+    "build": "node build.ts",
     "build:napi": "node build.ts",
     "build:release": "node build.ts --release",
-    "dev": "vp pack --watch",
-    "start": "vp run src/main.ts",
+    "dev": "node build.ts --watch",
     "test": "vp test && node --test test.cjs",
     "check": "vp check",
     "fmt": "vp fmt",

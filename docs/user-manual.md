@@ -20,15 +20,15 @@ npm install -D @oxc-node/core
 
 ---
 
-## Basic Server Setup (`Alloy.serve`)
+## Basic Server Setup (`serve`)
 
-The high-level `Alloy.serve()` API provides a fast, Bun-compatible HTTP server interface backed by Rocket.
+The high-level `serve()` API provides a fast HTTP server interface backed by Rocket.
 
 ```ts
-import { Alloy, Response } from "@alloy-ts/server";
+import { serve, Response, file } from "@alloy-ts/server";
 
-const server = Alloy.serve({
-  routes: {
+const server = serve(
+  {
     // Static routes
     "/api/status": new Response("OK"),
 
@@ -46,77 +46,60 @@ const server = Alloy.serve({
       },
     },
 
-    // Wildcard route for unmatched API requests
-    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
-
     // Redirect
     "/blog/hello": Response.redirect("/blog/hello/world"),
 
     // Serve a file from disk
-    "/favicon.ico": Alloy.file("./favicon.ico"),
+    "/favicon.ico": file("./favicon.ico"),
   },
 
   // Fallback for unmatched routes
-  fetch(req) {
+  (req) => {
     return new Response(`Not Found: ${req.path}`, { status: 404 });
   },
 
-  port: 3000,
-  hostname: "127.0.0.1",
-});
+  {
+    port: 3000,
+    hostname: "127.0.0.1",
+  },
+);
 
 console.log(`Server running at ${server.url}`);
 ```
 
 ---
 
-## Express/Rocket Builder API (`App`)
+## Rocket Builder API (`Rocket`)
 
-For applications that prefer method chaining similar to Rocket's `rocket::build()` or Express:
+For applications that prefer mounting routes on a Rocket instance:
 
 ```ts
-import { App, response } from "@alloy-ts/server";
+import { Rocket, response } from "@alloy-ts/server";
 
-const app = new App();
+const rocket = new Rocket({ port: 3000, address: "127.0.0.1" });
 
-app
-  .get("/", async () => response("Hello from Rocket!"))
-  .get("/users/:id", async (req) => response(`User ID: ${req.params.id}`))
-  .post("/data", async (req) => response("Received"));
+rocket.mount("/", "GET", "/", async () => response("Hello from Rocket!"));
+rocket.mount("/users", "GET", "/:id", async (req: any) => response(`User ID: ${req.params.id}`));
 
 // Launch the Rocket server
-app.launch();
+void rocket.launch();
 ```
 
 ---
 
-## TypeScript Decorators & Codegen
+## Route Registration & URI Generation
 
-Rocket's Rust procedural macros (`#[get]`, `routes!`, `uri!`) are represented in TypeScript via decorators and helper functions.
+### Route Registration (`registerRoute`)
 
-### Route Decorators
-
-Decorate class methods to register Rocket route handlers:
+Register Rocket route handlers directly:
 
 ```ts
-import { Get, Post, Put, Delete, Catch, uri } from "@alloy-ts/server";
+import { registerRoute, launch, response } from "@alloy-ts/server";
 
-class UserController {
-  @Get("/users/:id")
-  getUser(req: any) {
-    return `User ${req.params.id}`;
-  }
+registerRoute("GET", "/users/:id", async (req: any) => response(`User ${req.params.id}`));
+registerRoute("POST", "/users", async () => response("User created"));
 
-  @Post("/users")
-  createUser() {
-    return "User created";
-  }
-
-  @Catch(404)
-  notFound() {
-    return "Custom 404";
-  }
-}
+void launch();
 ```
 
 ### Type-Safe URI Generation (`uri`)
@@ -140,7 +123,7 @@ const path2 = uri("/person/<name>", { name: "Mike Smith" });
 Customize Rocket's configuration options:
 
 ```ts
-import { Config, Alloy } from "@alloy-ts/server";
+import { Config } from "@alloy-ts/server";
 
 const config = Config.try_from({
   port: 8080,

@@ -1,12 +1,12 @@
 import { expect, test } from "vite-plus/test";
-import { RocketHandler } from "./main.ts";
+import { Handler } from "../dist/index.js";
 
-test("RocketHandler constructor creates named handler", () => {
-  const handler = new RocketHandler("custom_handler");
-  expect(handler.name).toBe("custom_handler");
+test("Handler constructor creates named handler", () => {
+  const handler = new Handler("myHandler");
+  expect(handler.name).toBe("myHandler");
 });
 
-test("RocketHandler constructor allows optional name", () => {
-  const handler = new RocketHandler();
+test("Handler constructor with empty name", () => {
+  const handler = new Handler();
   expect(handler.name).toBeNull();
 });

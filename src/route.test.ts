@@ -1,23 +1,21 @@
 import { expect, test } from "vite-plus/test";
-import { RocketRoute } from "./main.ts";
+import { Route } from "../dist/index.js";
 
-test("RocketRoute.new creates route with computed default rank", () => {
-  const route = new RocketRoute("GET", "/");
+test("Route constructor creates route with default rank", () => {
+  const route = new Route("GET", "/hello");
   expect(route.method).toBe("GET");
-  expect(route.uri).toBe("/");
+  expect(route.uri).toBe("/hello");
   expect(route.rank).toBe(-9);
 });
 
-test("RocketRoute.ranked creates route with explicit rank", () => {
-  const route = RocketRoute.ranked(2, "GET", "/route/<path..>?query");
-  expect(route.method).toBe("GET");
-  expect(route.uri).toBe("/route/<path..>?query");
-  expect(route.rank).toBe(2);
+test("Route constructor for dynamic path computes rank", () => {
+  const route = new Route("GET", "/hello/<name>");
+  expect(route.rank).toBe(-5);
 });
 
-test("RocketRoute computes correct default ranks for queries", () => {
-  const route = new RocketRoute("GET", "/?foo");
-  expect(route.method).toBe("GET");
-  expect(route.uri).toBe("/?foo");
-  expect(route.rank).toBe(-12);
+test("Route.ranked creates route with explicit rank", () => {
+  const route = Route.ranked(5, "POST", "/submit");
+  expect(route.method).toBe("POST");
+  expect(route.uri).toBe("/submit");
+  expect(route.rank).toBe(5);
 });

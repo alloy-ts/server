@@ -1,4 +1,4 @@
-import { Config, Alloy, Response } from "../src/main.ts";
+import { Config, Response, serve } from "../dist/index.js";
 
 // Create custom Rocket configuration
 const customConfig = Config.try_from({
@@ -18,7 +18,7 @@ console.log(`- Port: ${customConfig.port}`);
 console.log(`- Workers: ${customConfig.workers}`);
 console.log(`- Log Level: ${customConfig.logLevel}`);
 
-const server = Alloy.serve(
+const server = serve(
   {
     "/": new Response("Server running with custom configuration!"),
   },

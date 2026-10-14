@@ -6,17 +6,18 @@ This document summarizes the current implementation status, supported features, 
 
 ## Current Status Overview
 
-| Component                               | Status      | Description                                                                                            |
-| :-------------------------------------- | :---------- | :----------------------------------------------------------------------------------------------------- |
-| **Rocket Core Server Engine**           | ✅ Complete | Runs Rocket 0.5 on a Tokio runtime in background threads.                                              |
-| **`Alloy.serve()` Server API**          | ✅ Complete | Full Bun/Alloy compatible route table parsing (`/api/status`, `:id`, `{ GET, POST }`, `*`, redirects). |
-| **`App` Builder API**                   | ✅ Complete | Method-chaining builder interface (`app.get()`, `app.post()`, `app.launch()`).                         |
-| **Request / Response Wire Translation** | ✅ Complete | Full headers, status codes, query strings, path params, and bodies across NAPI boundary.               |
-| **Static File Serving**                 | ✅ Complete | `Alloy.file(path)` lazy loading file response marker.                                                  |
-| **TypeScript Codegen Decorators**       | ✅ Complete | `@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Head`, `@Options`, `@Route`, `@Catch`.                 |
-| **URI Builder (`uri()`)**               | ✅ Complete | Replaces `:name`, `<name>`, `<name..>` path variables with URL-encoded values.                         |
-| **Server Configuration (`Config`)**     | ✅ Complete | `Config.debug_default()`, `Config.release_default()`, `Config.try_from()`, `Limits`, `Shutdown`.       |
-| **TypeScript Execution Support**        | ✅ Complete | Compatible with `@oxc-node/core`, Node.js ESM/CJS, and `vite-plus`.                                    |
+| Component                                | Status      | Description                                                                                      |
+| :--------------------------------------- | :---------- | :----------------------------------------------------------------------------------------------- |
+| **Rocket Core Server Engine**            | ✅ Complete | Runs Rocket 0.5 on a Tokio runtime in background threads.                                        |
+| **`serve()` Server API**                 | ✅ Complete | Full route table parsing (`/api/status`, `:id`, `{ GET, POST }`, redirects).                     |
+| **`Rocket` Class API**                   | ✅ Complete | `Rocket` builder interface (`rocket.mount()`, `rocket.register()`, `rocket.launch()`).           |
+| **Request / Response Wire Translation**  | ✅ Complete | Full headers, status codes, query strings, path params, and bodies across NAPI boundary.         |
+| **Static File Serving**                  | ✅ Complete | `file(path)` lazy loading file response marker.                                                  |
+| **Route Registration (`registerRoute`)** | ✅ Complete | Direct route registration for HTTP methods (`GET`, `POST`, `PUT`, `DELETE`, etc.).               |
+| **URI Builder (`uri()`)**                | ✅ Complete | Replaces `:name`, `<name>`, `<name..>` path variables with URL-encoded values.                   |
+| **Server Configuration (`Config`)**      | ✅ Complete | `Config.debug_default()`, `Config.release_default()`, `Config.try_from()`, `Limits`, `Shutdown`. |
+| **Request & Route Utilities**            | ✅ Complete | `Request`, `Route`, `Handler`, `RouteUri` wrappers exposing Rocket data structures.              |
+| **TypeScript Execution Support**         | ✅ Complete | Compatible with `@oxc-node/core`, Node.js ESM/CJS, and `vite-plus`.                              |
 
 ---
 
@@ -37,13 +38,13 @@ This document summarizes the current implementation status, supported features, 
 - [x] Support for limits (`Limits`) and shutdown options (`Shutdown`).
 - [x] Getters and setters for `address`, `port`, `workers`, `maxBlocking`, `ident`, `logLevel`, etc.
 
-### 3. TypeScript / JS Public Surface (`src/main.ts`)
+### 3. Native NAPI Surface (`src/app.rs`, `src/route.rs`, `src/handler.rs`, `src/request.rs`, `src/route_uri.rs`)
 
-- [x] `Alloy` namespace containing `serve`, `file`, `launch`, `Response`, `Config`, `Server`.
-- [x] `App` class for `app.get()`, `app.post()`, `app.launch()`.
-- [x] `response(body, init)` helper.
-- [x] `uri(pattern, params)` builder function.
-- [x] Route decorators (`@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Head`, `@Options`, `@Route`, `@Catch`).
+- [x] Native `Rocket` class for mounting routes, registering catchers, and launching the server.
+- [x] Native `serve()` function for serving route tables.
+- [x] Native `Route`, `Handler`, `Request`, `RouteUri` objects.
+- [x] Native `response(body, init)` helper.
+- [x] Native `uri(pattern, params)` builder function.
 
 ---
 

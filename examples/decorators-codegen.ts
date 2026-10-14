@@ -1,29 +1,14 @@
-import { Get, Post, Delete, uri, launch } from "../src/main.ts";
+import { registerRoute, uri, launch, response } from "../dist/index.js";
 
-class ArticleController {
-  @Get("/articles")
-  listArticles() {
-    return "List of articles";
-  }
-
-  @Get("/articles/:id")
-  getArticle(req: any) {
-    return `Article ID: ${req.params?.id}`;
-  }
-
-  @Post("/articles")
-  createArticle() {
-    return "Article created";
-  }
-
-  @Delete("/articles/:id")
-  deleteArticle(req: any) {
-    return `Deleted article ${req.params?.id}`;
-  }
-}
-
-// Instantiate controller to register route decorators
-new ArticleController();
+// Register routes using Rocket NAPI bindings
+registerRoute("GET", "/articles", async () => response("List of articles"));
+registerRoute("GET", "/articles/:id", async (req: any) =>
+  response(`Article ID: ${req.params?.id}`),
+);
+registerRoute("POST", "/articles", async () => response("Article created"));
+registerRoute("DELETE", "/articles/:id", async (req: any) =>
+  response(`Deleted article ${req.params?.id}`),
+);
 
 // Construct type-safe URIs
 const articleUri = uri("/articles/:id", { id: 101 });
@@ -31,4 +16,4 @@ console.log(`Generated URI: ${articleUri}`);
 
 // Launch Rocket server
 void launch();
-console.log("Decorators server running at http://localhost:3000");
+console.log("Server running at http://localhost:3000");

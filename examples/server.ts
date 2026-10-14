@@ -1,7 +1,7 @@
-import { Alloy, Response } from "../src/main.ts";
+import { serve, Response, file } from "../dist/index.js";
 
-const server = Alloy.serve({
-  routes: {
+const server = serve(
+  {
     // Static routes
     "/api/status": new Response("OK"),
 
@@ -19,20 +19,17 @@ const server = Alloy.serve({
       },
     },
 
-    // Wildcard route for all routes that start with "/api/" and aren't otherwise matched
-    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
-
     // Redirect from /blog/hello to /blog/hello/world
     "/blog/hello": Response.redirect("/blog/hello/world"),
 
-    // Serve a file by lazily loading it into memory
-    "/favicon.ico": Alloy.file("./package.json"),
+    // Serve a file
+    "/favicon.ico": file("./package.json"),
   },
 
   // (optional) fallback for unmatched routes:
-  fetch(req: any) {
+  (req: any) => {
     return new Response(`Not Found: ${req.path}`, { status: 404 });
   },
-});
+);
 
 console.log(`Server running at ${server.url}`);
