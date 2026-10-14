@@ -46,7 +46,8 @@ use rocket::fairing::AdHoc;
 use rocket::http::{Header as RocketHeader, Method, Status as RocketStatus};
 use rocket::request::Request;
 use rocket::response::Response as RocketResponse;
-use rocket::route::{Handler, Outcome as RouteOutcome, Route};
+use rocket::route::Route;
+use crate::handler::JsHandler;
 use rocket::{Data, Shutdown};
 
 /// Convenience alias for the threadsafe function each JS route handler is
@@ -170,7 +171,7 @@ pub fn file(path: String) -> StaticFile {
 
 /// The resolved intent of one route entry after parsing the JS `routes` table.
 #[derive(Clone)]
-enum RouteKind {
+pub(crate) enum RouteKind {
     Fn(Arc<HandlerTsfn>),
     Static(Arc<Response>),
     File {
@@ -178,47 +179,9 @@ enum RouteKind {
     },
 }
 
-/// A Rocket `Handler` that dispatches to one of the three [`RouteKind`] forms.
-#[derive(Clone)]
-struct JsHandler(Arc<RouteKind>);
-
-#[rocket::async_trait]
-impl Handler for JsHandler {
-    async fn handle<'r>(&self, request: &'r Request<'_>, data: Data<'r>) -> RouteOutcome<'r> {
-        let pattern = request
-            .route()
-            .map(|r| r.uri.to_string())
-            .unwrap_or_default();
-        match &*self.0 {
-            RouteKind::Fn(tsfn) => {
-                let input = build_request(request, data, &pattern).await;
-                // `call_async` resolves to `Promise<Response>`; awaiting that
-                // promise yields the JS `Response` (or a JS error -> 500).
-                let output = match tsfn.call_async(Ok(input)).await {
-                    Ok(promise) => match promise.await {
-                        Ok(payload) => payload,
-                        Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
-                    },
-                    Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
-                };
-                RouteOutcome::Success(build_response(&output))
-            }
-            RouteKind::Static(payload) => RouteOutcome::Success(build_response(payload.as_ref())),
-            RouteKind::File { path } => match rocket::tokio::fs::read(path).await {
-                Ok(bytes) => {
-                    let mut builder = RocketResponse::build();
-                    builder.sized_body(bytes.len(), Cursor::new(bytes));
-                    RouteOutcome::Success(builder.finalize())
-                }
-                Err(_) => RouteOutcome::Error(RocketStatus::NotFound),
-            },
-        }
-    }
-}
-
 /// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
 /// including any `:param` / `<param>` path segments.
-async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
+pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
     let path = uri.path().to_string();
@@ -314,7 +277,7 @@ fn translate_pattern(pattern: &str) -> String {
 
 /// Build a Rocket `Response` from a JS handler's `Response`, mirroring the
 /// `Responder` step in Rocket's generated code.
-fn build_response(payload: &Response) -> RocketResponse<'static> {
+pub(crate) fn build_response(payload: &Response) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(payload.status as u16) {
         builder.status(status);
