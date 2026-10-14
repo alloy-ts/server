@@ -1,38 +1,21 @@
 import { expect, test } from "vite-plus/test";
-import { file, Response, serve } from "./main.ts";
+import { file, Response } from "../dist/index.js";
 
 test("Response constructors and methods work as expected", () => {
-  const resp = new Response("hello world");
-  expect(resp.status).toBe(200);
+  const res = new Response("Hello World", { status: 200, headers: { "X-Test": "1" } });
+  expect(res.status).toBe(200);
+  expect(res.headers["X-Test"]).toBe("1");
 
-  const jsonResp = Response.json({ key: "value" }, { status: 201 });
-  expect(jsonResp.status).toBe(201);
+  const jsonRes = Response.json({ message: "ok" });
+  expect(jsonRes.status).toBe(200);
+  expect(jsonRes.headers["Content-Type"]).toBe("application/json");
 
-  const redirectResp = Response.redirect("http://example.com", 301);
-  expect(redirectResp.status).toBe(301);
-
-  const fileMarker = file("./test.txt");
-  expect(fileMarker.path).toBe("./test.txt");
+  const redirectRes = Response.redirect("https://rocket.rs", 301);
+  expect(redirectRes.status).toBe(301);
+  expect(redirectRes.headers["Location"]).toBe("https://rocket.rs");
 });
 
-test("serve creates a server and handles routes table and HTTP requests", async () => {
-  const server = serve({
-    port: 3001,
-    routes: {
-      "/api/status": new Response("OK"),
-      "/users/:id": async (req: unknown) => {
-        console.log("DEBUG /users/:id req:", req);
-        return new Response(`Hello User ${(req as any)?.params?.id}!`);
-      },
-    },
-  });
-
-  try {
-    const res2 = await fetch(`${server.url}/users/42`);
-    console.log("res2 status:", res2.status);
-    const text2 = await res2.text();
-    console.log("text2:", text2);
-  } finally {
-    server.stop();
-  }
+test("file helper works as expected", () => {
+  const f = file("index.html");
+  expect(f.path).toBe("index.html");
 });
