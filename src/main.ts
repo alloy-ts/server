@@ -134,6 +134,7 @@ export const Response = native.Response;
 export const file = native.file;
 export const Config = native.Config;
 export const Rocket = native.Rocket;
+export const Route = native.Route;
 export const launch = native.launch;
 export const rocketMain = native.rocketMain;
 
@@ -271,6 +272,7 @@ export const Alloy = {
   response,
   Config,
   Rocket,
+  Route,
   App,
   launch,
   rocketMain,

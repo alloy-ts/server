@@ -18,6 +18,16 @@ void test("Rocket NAPI Config", async () => {
   assert.equal(cfg.port, 8080);
 });
 
+void test("Rocket NAPI Route", async () => {
+  const { Route } = await import("./dist/main.mjs");
+  const route = new Route("GET", "/test/<id>", () => {});
+  assert.equal(route.method, "GET");
+  assert.equal(route.uri, "/test/<id>");
+  assert.equal(typeof route.rank, "number");
+  route.name = "test_route";
+  assert.equal(route.name, "test_route");
+});
+
 void test("Rocket NAPI Codegen", async () => {
   const { codegen } = await import("./dist/main.mjs");
 

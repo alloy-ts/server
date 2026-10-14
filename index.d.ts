@@ -78,6 +78,19 @@ export declare class Rocket {
   shutdown(): void;
 }
 
+export declare class Route {
+  constructor(method: string, uri: string, handler: any);
+  static ranked(rank: number | null, method: string, uri: string, handler: any): Route;
+  get name(): string | null;
+  set name(value: string | null);
+  get method(): string;
+  get uri(): string;
+  get rank(): number;
+  set rank(value: number);
+  get format(): string | null;
+  mapBase(base: string): void;
+}
+
 export declare function launch(config?: RocketConfig | null): Promise<void>;
 export declare function rocketMain(config?: RocketConfig | null): Promise<void>;
 

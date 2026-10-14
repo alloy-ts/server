@@ -908,6 +908,7 @@ export const file = nativeBinding.file;
 export const Response = nativeBinding.Response;
 export const Config = nativeBinding.Config;
 export const Rocket = nativeBinding.Rocket;
+export const Route = nativeBinding.Route;
 export const launch = nativeBinding.launch;
 export const rocketMain = nativeBinding.rocketMain;
 export const generateRoute = nativeBinding.generateRoute;
