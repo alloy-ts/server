@@ -22,7 +22,7 @@ use napi::Status;
 use napi_derive::napi;
 
 use rocket::config::{
-    Config as RocketConfig, Ident, LogLevel, RocketShutdown as RocketShutdownAlias, Sig,
+    Config as RocketConfig, Ident, LogLevel, Shutdown as RocketShutdownAlias, Sig,
 };
 use rocket::data::{ByteUnit, Limits as RocketLimits};
 use rocket::figment::{Profile, value::magic::RelativePathBuf};
@@ -88,6 +88,7 @@ pub const CLI_COLORS: &'static str = "cli_colors";
 /// expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
 /// or an SI unit string (`"32KiB"`).
 #[napi(object)]
+#[derive(Clone)]
 pub struct Limits {
     pub limits: HashMap<String, String>,
 }
@@ -98,6 +99,7 @@ pub struct Limits {
 /// fields fall back to Rocket's `Shutdown::default()`. Signal names use
 /// Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
 #[napi(object)]
+#[derive(Clone)]
 pub struct Shutdown {
     pub ctrlc: Option<bool>,
     pub signals: Option<Vec<String>>,
@@ -136,7 +138,7 @@ fn parse_log_level(s: &str) -> napi::Result<LogLevel> {
 fn parse_ident(value: Option<String>) -> napi::Result<Ident> {
     match value {
         None => Ok(Ident::none()),
-        Some(s) => Ident::try_new(&s).map_err(err),
+        Some(s) => Ident::try_new(s).map_err(err),
     }
 }
 
@@ -177,7 +179,7 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        limits = limits.limit(name, unit);
+        limits = limits.limit(name.clone(), unit);
     }
     Ok(limits)
 }
@@ -447,7 +449,7 @@ impl Config {
     }
     #[napi(setter)]
     pub fn set_ident(&mut self, value: Option<String>) -> napi::Result<()> {
-        parse_ident(value)?;
+        parse_ident(value.clone())?;
         self.ident = value;
         Ok(())
     }
@@ -568,7 +570,7 @@ impl Config {
             limits: Limits {
                 limits: HashMap::new(),
             },
-            temp_dir: cfg.temp_dir.to_string(),
+            temp_dir: cfg.temp_dir.relative().display().to_string(),
             keep_alive: cfg.keep_alive,
             #[cfg(feature = "tls")]
             tls: None,
