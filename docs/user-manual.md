@@ -20,6 +20,7 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
    - [Mounting Routes & Catchers](#mounting-routes--catchers)
    - [Custom Routes (`Route`) & Route URIs (`RouteUri`)](#custom-routes-route--route-uris-routeuri)
    - [Handler Outcomes (`HandlerBridge`)](#handler-outcomes-handlerbridge)
+   - [Fairings / Middleware (`FairingBridge`)](#fairings--middleware-fairingbridge)
    - [Launch & Graceful Shutdown](#launch--graceful-shutdown)
 6. [Rocket Configuration (`Config`)](#rocket-configuration-config)
    - [Inspecting Defaults](#inspecting-defaults)
@@ -36,7 +37,7 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
 `@alloy-ts/server` provides dual paradigms for building web services backed by Rust's Rocket framework:
 
 1. **Bun/Alloy-compatible High Level API (`serve`)**: Declarative route map syntax with low-overhead handler dispatching.
-2. **Direct Rocket Control (`Rocket` / `Config` / `Route` / `RouteUri` / `HandlerBridge`)**: Direct control over Rocket's lifecycle, routes, ranks, catchers, and Figment configuration.
+2. **Direct Rocket Control (`Rocket` / `Config` / `Route` / `RouteUri` / `FairingBridge` / `HandlerBridge`)**: Direct control over Rocket's lifecycle, routes, ranks, catchers, middleware fairings, and Figment configuration.
 
 ---
 
@@ -206,6 +207,18 @@ const handler = new HandlerBridge((req) => {
     headers: [{ name: "content-type", value: "application/json" }],
     body: Buffer.from(JSON.stringify({ items: [] })),
   });
+});
+```
+
+### Fairings / Middleware (`FairingBridge`)
+
+Attach structured middleware fairings:
+
+```ts
+import { FairingBridge } from "@alloy-ts/server";
+
+const logger = FairingBridge.onRequest("Request Logger", (req) => {
+  console.log(`[${req.method}] ${req.path}`);
 });
 ```
 
