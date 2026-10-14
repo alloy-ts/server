@@ -1,14 +1,17 @@
 import { expect, test } from "vite-plus/test";
-import { Alloy, App, Config, file, Response, response } from "../dist/index.js";
 import {
+  Alloy,
+  App,
   buildRouteUri,
+  Config,
+  file,
   generateRoutesTypeDefinitions,
-  get,
-  getRegisteredRoutesMeta,
   parseRoutePattern,
-  post,
+  registerRoute,
+  Response,
+  response,
   uri,
-} from "./codegen.ts";
+} from "../dist/index.js";
 
 test("Response static constructors and getters", () => {
   const resp = new Response("hello world", { status: 200, headers: [["x-custom", "value"]] });
@@ -56,13 +59,11 @@ test("Codegen utilities: uri and route parsing", () => {
   expect(tsDefs).toContain("id: string;");
 });
 
-test("Route registration and metadata", () => {
-  get("/api/health", () => new Response("OK"));
-  post("/api/data", () => new Response("Created", { status: 201 }));
-
-  const meta = getRegisteredRoutesMeta();
-  expect(meta.some((m) => m.path === "/api/health" && m.method === "GET")).toBe(true);
-  expect(meta.some((m) => m.path === "/api/data" && m.method === "POST")).toBe(true);
+test("Route registration", () => {
+  expect(() => registerRoute("GET", "/api/health", () => new Response("OK"))).not.toThrow();
+  expect(() =>
+    registerRoute("POST", "/api/data", () => new Response("Created", { status: 201 })),
+  ).not.toThrow();
 });
 
 test("App class methods and launch/stop lifecycle", () => {

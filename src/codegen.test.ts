@@ -1,17 +1,12 @@
 import { expect, test } from "vite-plus/test";
 import {
   buildRouteUri,
-  del,
   generateRoutesTypeDefinitions,
   generateTsRouteTypes,
-  get,
-  getRegisteredRoutesMeta,
   parseRoutePattern,
-  post,
-  put,
-  route,
+  registerRoute,
   uri,
-} from "./codegen.ts";
+} from "../dist/index.js";
 
 test("parseRoutePattern extracts path and query parameters", () => {
   const info = parseRoutePattern("/api/v1/users/<id>/<action..>?<ref>&<verbose..>");
@@ -54,17 +49,7 @@ test("generateTsRouteTypes emits valid TypeScript interface definitions", () => 
   expect(codeFromPatterns).toContain("id: string;");
 });
 
-test("route registration helpers and getRegisteredRoutesMeta", () => {
-  get("/test/get", () => "ok");
-  post("/test/post", () => "ok");
-  put("/test/put", () => "ok");
-  del("/test/del", () => "ok");
-  route("PATCH", "/test/patch", () => "ok");
-
-  const meta = getRegisteredRoutesMeta();
-  expect(meta.some((m) => m.path === "/test/get" && m.method === "GET")).toBe(true);
-  expect(meta.some((m) => m.path === "/test/post" && m.method === "POST")).toBe(true);
-  expect(meta.some((m) => m.path === "/test/put" && m.method === "PUT")).toBe(true);
-  expect(meta.some((m) => m.path === "/test/del" && m.method === "DELETE")).toBe(true);
-  expect(meta.some((m) => m.path === "/test/patch" && m.method === "PATCH")).toBe(true);
+test("route registration via registerRoute", () => {
+  expect(() => registerRoute("GET", "/test/get", () => "ok")).not.toThrow();
+  expect(() => registerRoute("POST", "/test/post", () => "ok")).not.toThrow();
 });

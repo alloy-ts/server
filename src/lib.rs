@@ -12,6 +12,7 @@ mod config;
 mod handler;
 mod rocket_app;
 mod route;
+mod route_uri;
 mod server;
 
 pub use codegen::*;
@@ -19,4 +20,5 @@ pub use config::*;
 pub use handler::*;
 pub use rocket_app::{rocket_main, Rocket, RocketConfig};
 pub use route::*;
+pub use route_uri::*;
 pub use server::*;

@@ -138,6 +138,12 @@ pub fn build_route_uri(
     result_path
 }
 
+/// Type-safe URI builder corresponding to Rocket's `uri!` macro.
+#[napi]
+pub fn uri(pattern: String, params: Option<HashMap<String, String>>) -> String {
+    build_route_uri(pattern, params.unwrap_or_default())
+}
+
 fn urlencoding_encode(s: &str) -> String {
     let mut encoded = String::new();
     for b in s.bytes() {
@@ -175,4 +181,11 @@ pub fn generate_ts_route_types(routes: Vec<RouteInfo>) -> String {
 
     code.push_str("}\n");
     code
+}
+
+/// Codegen helper: generate TypeScript definition interfaces for registered route patterns.
+#[napi]
+pub fn generate_routes_type_definitions(patterns: Vec<String>) -> String {
+    let routes = patterns.into_iter().map(parse_route_pattern).collect();
+    generate_ts_route_types(routes)
 }
