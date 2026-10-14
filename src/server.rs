@@ -62,6 +62,7 @@ pub struct ResponseInit {
 
 /// The `Response` value a JS handler returns.
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Response {
     pub status: u32,
     pub headers: HashMap<String, String>,

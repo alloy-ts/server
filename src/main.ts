@@ -132,12 +132,31 @@ export class App {
   }
 }
 
+export const HandlerOutcome = {
+  success: (res: Response | native.Response): native.HandlerOutcome => ({
+    kind: "Success",
+    response: res,
+    status: res.status,
+  }),
+  forward: (status?: number | null): native.HandlerOutcome => ({
+    kind: "Forward",
+    response: undefined,
+    status: status ?? undefined,
+  }),
+  error: (status: number): native.HandlerOutcome => ({
+    kind: "Error",
+    response: undefined,
+    status,
+  }),
+};
+
 export const Alloy = {
   serve,
   file: native.file,
   Response,
   App,
   Route: native.Route,
+  HandlerOutcome,
 };
 
 export const Bun = Alloy;
