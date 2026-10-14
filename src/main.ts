@@ -7,6 +7,7 @@ export function main(): string {
 export const Response = native.Response;
 export const file = native.file;
 export const Catcher = native.Catcher;
+export const Handler = native.Handler;
 
 function wrapHandler(handler: unknown): unknown {
   if (typeof handler === "function") {
@@ -75,6 +76,7 @@ export const Alloy = {
   Response,
   Rocket,
   Catcher,
+  Handler,
   uri,
   parseRouteAttribute,
   parseCatcherAttribute,
