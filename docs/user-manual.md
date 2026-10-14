@@ -16,7 +16,7 @@ The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NA
    - [Request Helper Methods (`req.json()`, `req.text()`, `req.params`)](#request-helper-methods)
    - [Response Helpers (`Response`, `Response.json()`, `Response.redirect()`)](#response-helpers)
    - [Static File Serving (`Bun.file` / `file`)](#static-file-serving)
-4. [Route Management & Custom Handlers (`Route` & `HandlerOutcome`)](#route-management--custom-handlers-route--handleroutcome)
+4. [Route Management & URIs (`Route`, `RouteUri`, `HandlerOutcome`)](#route-management--uris-route-routeuri-handleroutcome)
 5. [Low-Level Rocket Lifecycle (`Rocket`)](#low-level-rocket-lifecycle-rocket)
 6. [TypeScript Code Generation (`codegen`)](#typescript-code-generation-codegen)
    - [Route Pattern Translation](#route-pattern-translation)
@@ -180,20 +180,33 @@ Alloy.serve({
 
 ---
 
-## Route Management & Custom Handlers (`Route` & `HandlerOutcome`)
+## Route Management & URIs (`Route`, `RouteUri`, `HandlerOutcome`)
 
-Inspect, construct, and rank routes using NAPI bindings for `Route`:
+Inspect, construct, and rank routes using NAPI bindings for `Route` and `RouteUri`:
 
 ```ts
-import { Route, handlerSuccess, handlerError, handlerForward, response } from "@alloy-ts/server";
+import {
+  Route,
+  RouteUri,
+  handlerSuccess,
+  handlerError,
+  handlerForward,
+  response,
+} from "@alloy-ts/server";
 
 // Construct a route with method, URI, name, format
 const route = new Route("GET", "/items/<id>", "getItem", "json");
 console.log(route.rank); // -9 (computed Rocket default rank)
 
+// Inspect RouteUri
+const routeUri = new RouteUri("/", "/foo/bar?a=1");
+console.log(routeUri.base); // "/"
+console.log(routeUri.path); // "/foo/bar"
+console.log(routeUri.query); // "a=1"
+
 // Map URI base prefix
-route.mapBase("/v1");
-console.log(route.uri); // "/v1/items/<id>"
+routeUri.mapBase("/v1");
+console.log(routeUri.path); // "/v1/foo/bar"
 
 // Custom Handler outcomes
 const ok = handlerSuccess(response("Hello"));

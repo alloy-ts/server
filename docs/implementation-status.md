@@ -11,7 +11,7 @@ This document outlines the current state of NAPI bindings for the **Rocket** web
 - **NAPI Config Bindings (`Config`)**: Complete mirror of `rocket::config::Config` (getters/setters for address, port, workers, max_blocking, ident, ip_header, limits, keep_alive, shutdown, log_level, cli_colors, tls, secret_key).
 - **Figment Integration**: Ability to initialize config from Rocket defaults or figment providers (`Config.figment()`, `Config.debugDefault()`, `Config.releaseDefault()`).
 - **Low-Level Rocket Lifecycle (`Rocket`)**: Programmatic control over building, mounting routes, registering catchers, igniting, launching on dedicated background Tokio runtime, and graceful shutdown.
-- **Route & Handler Introspection (`Route`, `HandlerOutcome`)**: Full NAPI bindings for Rocket's `Route` (method, URI, default & explicit rank computation, URI base mapping) and `HandlerOutcome` (`handlerSuccess`, `handlerError`, `handlerForward`).
+- **Route, RouteUri & Handler Introspection (`Route`, `RouteUri`, `HandlerOutcome`)**: Full NAPI bindings for Rocket's `Route` (method, URI, default & explicit rank computation, URI base mapping), `RouteUri` (`base`, `path`, `query`, `asStr`, `isNormalized`), and `HandlerOutcome` (`handlerSuccess`, `handlerError`, `handlerForward`).
 
 ### Bun / Alloy Compatible Server API (`Alloy.serve`)
 
