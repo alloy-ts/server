@@ -7,200 +7,203 @@
  * flavor napi-rs can build is listed, because `NAPI_RS_NATIVE_LIBRARY_PATH`
  * can point the loader at a WASI artifact this package does not build itself.
  */
-export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
+export declare const __napiBindingTarget: "native" | "wasm32-wasi" | "wasm32-wasip1";
 
 export declare class Config {
-  constructor()
-  static debugDefault(): Config
-  static releaseDefault(): Config
-  static defaultConfig(): Config
-  static figment(): Config
-  static tryFrom(init: ConfigInit): Config
-  static from(init: ConfigInit): Config
-  static parameters(): Array<string>
-  get profile(): string | null
-  set profile(value: string | undefined | null)
-  get address(): string
-  set address(value: string)
-  get port(): number
-  set port(value: number)
-  get workers(): number
-  set workers(value: number)
-  get maxBlocking(): number
-  set maxBlocking(value: number)
-  get ident(): string | null
-  set ident(value: string | undefined | null)
-  get ipHeader(): string | null
-  set ipHeader(value: string | undefined | null)
-  get limits(): Limits
-  set limits(value: Limits)
-  get tempDir(): string
-  set tempDir(value: string)
-  get keepAlive(): number
-  set keepAlive(value: number)
-  get shutdown(): Shutdown
-  set shutdown(value: Shutdown)
-  get logLevel(): string
-  set logLevel(value: string)
-  get cliColors(): boolean
-  set cliColors(value: boolean)
-  get secretKey(): string | null
-  set secretKey(value: string | undefined | null)
-  get tls(): TlsConfigInit | null
-  set tls(value: TlsConfigInit | undefined | null)
+  constructor();
+  static debugDefault(): Config;
+  static releaseDefault(): Config;
+  static defaultConfig(): Config;
+  static figment(): Config;
+  static tryFrom(init: ConfigInit): Config;
+  static from(init: ConfigInit): Config;
+  static parameters(): Array<string>;
+  get profile(): string | null;
+  set profile(value: string | undefined | null);
+  get address(): string;
+  set address(value: string);
+  get port(): number;
+  set port(value: number);
+  get workers(): number;
+  set workers(value: number);
+  get maxBlocking(): number;
+  set maxBlocking(value: number);
+  get ident(): string | null;
+  set ident(value: string | undefined | null);
+  get ipHeader(): string | null;
+  set ipHeader(value: string | undefined | null);
+  get limits(): Limits;
+  set limits(value: Limits);
+  get tempDir(): string;
+  set tempDir(value: string);
+  get keepAlive(): number;
+  set keepAlive(value: number);
+  get shutdown(): Shutdown;
+  set shutdown(value: Shutdown);
+  get logLevel(): string;
+  set logLevel(value: string);
+  get cliColors(): boolean;
+  set cliColors(value: boolean);
+  get secretKey(): string | null;
+  set secretKey(value: string | undefined | null);
+  get tls(): TlsConfigInit | null;
+  set tls(value: TlsConfigInit | undefined | null);
 }
 
 /** The `Response` class constructed in JS. */
 export declare class Response {
-  constructor(body?: string | undefined | null, init?: ResponseInit | undefined | null)
-  static json(data: any, init?: ResponseInit | undefined | null): Response
-  static redirect(url: string, status?: number | undefined | null): Response
-  get status(): number
-  get headers(): Array<[string, string]>
-  get body(): Buffer | null
+  constructor(body?: string | undefined | null, init?: ResponseInit | undefined | null);
+  static json(data: any, init?: ResponseInit | undefined | null): Response;
+  static redirect(url: string, status?: number | undefined | null): Response;
+  get status(): number;
+  get headers(): Array<[string, string]>;
+  get body(): Buffer | null;
 }
 
 /** Handle returned by [`serve`]. */
 export declare class Server {
-  url: string
-  port: number
-  stop(): void
+  url: string;
+  port: number;
+  stop(): void;
 }
 
-export declare const ADDRESS: string
+export declare const ADDRESS: string;
 
 /**
  * NAPI equivalent of Rocket's `uri!` macro: interpolates parameters into
  * a route pattern to construct a URL-safe URI.
  */
-export declare function buildRouteUri(template: string, params?: Record<string, string> | undefined | null): string
+export declare function buildRouteUri(
+  template: string,
+  params?: Record<string, string> | undefined | null,
+): string;
 
-export declare const CLI_COLORS: string
+export declare const CLI_COLORS: string;
 
 export interface ConfigInit {
-  profile?: string
-  address?: string
-  port?: number
-  workers?: number
-  maxBlocking?: number
-  ident?: string
-  identNone?: boolean
-  ipHeader?: string
-  ipHeaderNone?: boolean
-  limits?: Limits
-  tempDir?: string
-  keepAlive?: number
-  shutdown?: Shutdown
-  logLevel?: string
-  cliColors?: boolean
-  secretKey?: string
-  tls?: TlsConfigInit
+  profile?: string;
+  address?: string;
+  port?: number;
+  workers?: number;
+  maxBlocking?: number;
+  ident?: string;
+  identNone?: boolean;
+  ipHeader?: string;
+  ipHeaderNone?: boolean;
+  limits?: Limits;
+  tempDir?: string;
+  keepAlive?: number;
+  shutdown?: Shutdown;
+  logLevel?: string;
+  cliColors?: boolean;
+  secretKey?: string;
+  tls?: TlsConfigInit;
 }
 
-export declare const DEBUG_PROFILE: string
+export declare const DEBUG_PROFILE: string;
 
-export declare const DEFAULT_PROFILE: string
+export declare const DEFAULT_PROFILE: string;
 
 /** `file(path)` — marks a route value as a file served from disk. */
-export declare function file(path: string): StaticFile
+export declare function file(path: string): StaticFile;
 
 /** Generate route table manifest metadata for dynamic TS route table inspection. */
-export declare function generateRouteManifest(routes: Array<string>): Array<RoutePatternInfo>
+export declare function generateRouteManifest(routes: Array<string>): Array<RoutePatternInfo>;
 
-export declare const IDENT: string
+export declare const IDENT: string;
 
-export declare const IP_HEADER: string
+export declare const IP_HEADER: string;
 
-export declare const KEEP_ALIVE: string
+export declare const KEEP_ALIVE: string;
 
-export declare function launch(): Promise<void>
+export declare function launch(): Promise<void>;
 
 export interface Limits {
-  limits: Record<string, string>
+  limits: Record<string, string>;
 }
 
-export declare const LIMITS: string
+export declare const LIMITS: string;
 
-export declare const LOG_LEVEL: string
+export declare const LOG_LEVEL: string;
 
-export declare const MAX_BLOCKING: string
+export declare const MAX_BLOCKING: string;
 
 /**
  * Helper for `#[catch]` status parsing: turns `"404"`, `"default"`, or numeric status
  * into Rocket catcher code representation.
  */
-export declare function parseCatcherCode(codeStr: string): number | null
+export declare function parseCatcherCode(codeStr: string): number | null;
 
 /**
  * Parse a TS/Alloy route pattern (`/users/:id`, `/api/*`) into Rocket pattern syntax
  * and extract path parameter names.
  */
-export declare function parseRoutePattern(pattern: string): RoutePatternInfo
+export declare function parseRoutePattern(pattern: string): RoutePatternInfo;
 
-export declare const PORT: string
+export declare const PORT: string;
 
-export declare function registerRoute(method: string, path: string, handler: unknown): void
+export declare function registerRoute(method: string, path: string, handler: unknown): void;
 
-export declare const RELEASE_PROFILE: string
+export declare const RELEASE_PROFILE: string;
 
 /** Wire type sent from Rust -> JS for every request. */
 export interface RequestInput {
-  method: string
-  path: string
-  query: string
-  headers: Array<[string, string]>
-  body?: Buffer
-  params: Record<string, string>
+  method: string;
+  path: string;
+  query: string;
+  headers: Array<[string, string]>;
+  body?: Buffer;
+  params: Record<string, string>;
 }
 
 /** Init passed to the `Response` constructor / static helpers. */
 export interface ResponseInit {
-  status?: number
-  headers?: Array<[string, string]>
+  status?: number;
+  headers?: Array<[string, string]>;
 }
 
 /** The `Response` value a JS handler returns. */
 export interface ResponsePayload {
-  status: number
-  headers: Array<[string, string]>
-  body?: Buffer
+  status: number;
+  headers: Array<[string, string]>;
+  body?: Buffer;
 }
 
 /** Parsed route pattern metadata. */
 export interface RoutePatternInfo {
-  rawPattern: string
-  rocketPattern: string
-  pathParams: Array<string>
-  isWildcard: boolean
+  rawPattern: string;
+  rocketPattern: string;
+  pathParams: Array<string>;
+  isWildcard: boolean;
 }
 
-export declare const SECRET_KEY: string
+export declare const SECRET_KEY: string;
 
 /** NAPI `serve(options)` function. */
-export declare function serve(options: unknown): Server
+export declare function serve(options: unknown): Server;
 
 export interface Shutdown {
-  ctrlc?: boolean
-  signals?: Array<string>
-  grace?: number
-  mercy?: number
-  force?: boolean
+  ctrlc?: boolean;
+  signals?: Array<string>;
+  grace?: number;
+  mercy?: number;
+  force?: boolean;
 }
 
-export declare const SHUTDOWN: string
+export declare const SHUTDOWN: string;
 
 /** Lazily-served static file marker returned by [`file`]. */
 export interface StaticFile {
-  path: string
+  path: string;
 }
 
-export declare const TEMP_DIR: string
+export declare const TEMP_DIR: string;
 
-export declare const TLS: string
+export declare const TLS: string;
 
 export interface TlsConfigInit {
-  certs: string
-  key: string
+  certs: string;
+  key: string;
 }
 
-export declare const WORKERS: string
+export declare const WORKERS: string;
