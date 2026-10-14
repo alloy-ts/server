@@ -214,7 +214,8 @@ pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern
 /// Align a Rocket route pattern's `<param>` segments with the actual request
 /// path segments to populate `req.params`.
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
-    let p_segs: Vec<&str> = pattern
+    let pattern_path = pattern.split('?').next().unwrap_or(pattern);
+    let p_segs: Vec<&str> = pattern_path
         .trim_start_matches('/')
         .split('/')
         .filter(|s| !s.is_empty())

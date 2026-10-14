@@ -79,7 +79,8 @@ pub struct ResponsePayload {
 }
 
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
-    let p_segs: Vec<&str> = pattern
+    let pattern_path = pattern.split('?').next().unwrap_or(pattern);
+    let p_segs: Vec<&str> = pattern_path
         .trim_start_matches('/')
         .split('/')
         .filter(|s| !s.is_empty())
