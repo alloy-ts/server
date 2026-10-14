@@ -24,6 +24,74 @@ export function main(): string {
 }
 
 /**
+ * Convenience helper to create a Response object.
+ */
+export function response(body?: string, init?: any): any {
+  return new native.Response(body, init);
+}
+
+/**
+ * App class mirroring Rocket's builder pattern (rocket::build()).
+ */
+export class App {
+  private routes: Array<{ method: string; path: string; handler: any }> = [];
+
+  get(path: string, handler: any): this {
+    this.routes.push({ method: "GET", path, handler });
+    native.registerRoute("GET", path, handler);
+    return this;
+  }
+
+  post(path: string, handler: any): this {
+    this.routes.push({ method: "POST", path, handler });
+    native.registerRoute("POST", path, handler);
+    return this;
+  }
+
+  put(path: string, handler: any): this {
+    this.routes.push({ method: "PUT", path, handler });
+    native.registerRoute("PUT", path, handler);
+    return this;
+  }
+
+  delete(path: string, handler: any): this {
+    this.routes.push({ method: "DELETE", path, handler });
+    native.registerRoute("DELETE", path, handler);
+    return this;
+  }
+
+  patch(path: string, handler: any): this {
+    this.routes.push({ method: "PATCH", path, handler });
+    native.registerRoute("PATCH", path, handler);
+    return this;
+  }
+
+  head(path: string, handler: any): this {
+    this.routes.push({ method: "HEAD", path, handler });
+    native.registerRoute("HEAD", path, handler);
+    return this;
+  }
+
+  options(path: string, handler: any): this {
+    this.routes.push({ method: "OPTIONS", path, handler });
+    native.registerRoute("OPTIONS", path, handler);
+    return this;
+  }
+
+  mount(base: string, method: string, path: string, handler: any): this {
+    const fullPath =
+      base.endsWith("/") && path.startsWith("/") ? base + path.slice(1) : base + path;
+    this.routes.push({ method, path: fullPath, handler });
+    native.registerRoute(method, fullPath, handler);
+    return this;
+  }
+
+  launch(): Promise<void> {
+    return native.launch();
+  }
+}
+
+/**
  * Re-exported NAPI bindings for direct usage.
  */
 export const serve = native.serve;
@@ -45,6 +113,8 @@ export const Alloy = {
   Response: native.Response,
   Config: native.Config,
   Server: native.Server,
+  App,
+  response,
 };
 
 // ---------------------------------------------------------------------------
