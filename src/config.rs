@@ -8,13 +8,10 @@
 //! static defaults / provider helpers (`debug_default`, `release_default`,
 //! `figment`, `try_from`, `from`) are provided as constructors and methods.
 //!
-//! Composite values (limits, shutdown, TLS) are surfaced as nested NAPI
-//! objects (`Limits`, `Shutdown`, `TlsConfig`). The `secret_key` and `tls`
-//! fields are gated behind the `secrets` and `tls` crate features
-//! respectively; enable them in `Cargo.toml`
-//! (`rocket = { features = ["tls", "secrets"] }`) to surface those bindings.
+//! Composite values (limits, shutdown) are surfaced as nested NAPI
+//! objects (`Limits`, `Shutdown`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use napi::bindgen_prelude::Error as NapiError;
@@ -28,12 +25,6 @@ use rocket::data::{ByteUnit, Limits as RocketLimits};
 use rocket::figment::{Profile, value::magic::RelativePathBuf};
 use rocket::http::uncased::Uncased;
 
-#[cfg(feature = "secrets")]
-use rocket::config::SecretKey;
-
-#[cfg(feature = "tls")]
-use rocket::config::{CipherSuite, MutualTls as RocketMutualTls, TlsConfig as RocketTlsConfig};
-
 fn err<E: std::fmt::Display>(e: E) -> NapiError {
     NapiError::new(Status::GenericFailure, e.to_string())
 }
@@ -43,40 +34,40 @@ fn err<E: std::fmt::Display>(e: E) -> NapiError {
 // ---------------------------------------------------------------------------
 
 #[napi]
-pub const DEBUG_PROFILE: &'static str = "debug";
+pub const DEBUG_PROFILE: &str = "debug";
 #[napi]
-pub const RELEASE_PROFILE: &'static str = "release";
+pub const RELEASE_PROFILE: &str = "release";
 #[napi]
-pub const DEFAULT_PROFILE: &'static str = "debug";
+pub const DEFAULT_PROFILE: &str = "debug";
 
 #[napi]
-pub const ADDRESS: &'static str = "address";
+pub const ADDRESS: &str = "address";
 #[napi]
-pub const PORT: &'static str = "port";
+pub const PORT: &str = "port";
 #[napi]
-pub const WORKERS: &'static str = "workers";
+pub const WORKERS: &str = "workers";
 #[napi]
-pub const MAX_BLOCKING: &'static str = "max_blocking";
+pub const MAX_BLOCKING: &str = "max_blocking";
 #[napi]
-pub const KEEP_ALIVE: &'static str = "keep_alive";
+pub const KEEP_ALIVE: &str = "keep_alive";
 #[napi]
-pub const IDENT: &'static str = "ident";
+pub const IDENT: &str = "ident";
 #[napi]
-pub const IP_HEADER: &'static str = "ip_header";
+pub const IP_HEADER: &str = "ip_header";
 #[napi]
-pub const LIMITS: &'static str = "limits";
+pub const LIMITS: &str = "limits";
 #[napi]
-pub const TLS: &'static str = "tls";
+pub const TLS: &str = "tls";
 #[napi]
-pub const SECRET_KEY: &'static str = "secret_key";
+pub const SECRET_KEY: &str = "secret_key";
 #[napi]
-pub const TEMP_DIR: &'static str = "temp_dir";
+pub const TEMP_DIR: &str = "temp_dir";
 #[napi]
-pub const LOG_LEVEL: &'static str = "log_level";
+pub const LOG_LEVEL: &str = "log_level";
 #[napi]
-pub const SHUTDOWN: &'static str = "shutdown";
+pub const SHUTDOWN: &str = "shutdown";
 #[napi]
-pub const CLI_COLORS: &'static str = "cli_colors";
+pub const CLI_COLORS: &str = "cli_colors";
 
 // ---------------------------------------------------------------------------
 // Composite NAPI value types
@@ -106,25 +97,6 @@ pub struct Shutdown {
     pub grace: Option<u32>,
     pub mercy: Option<u32>,
     pub force: Option<bool>,
-}
-
-/// Mirrors `rocket::config::TlsConfig`.
-#[cfg(feature = "tls")]
-#[napi(object)]
-pub struct TlsConfig {
-    pub certs: String,
-    pub key: String,
-    pub prefer_server_cipher_order: Option<bool>,
-    pub ciphers: Option<Vec<String>>,
-    pub mutual: Option<MutualTls>,
-}
-
-/// Mirrors the `tls.mutual` portion of `rocket::config::TlsConfig`.
-#[cfg(feature = "tls")]
-#[napi(object)]
-pub struct MutualTls {
-    pub ca_certs: String,
-    pub mandatory: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -190,9 +162,9 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
         shutdown.ctrlc = v;
     }
     if let Some(sigs) = &napi.signals {
-        let mut parsed = Vec::with_capacity(sigs.len());
+        let mut parsed = HashSet::with_capacity(sigs.len());
         for s in sigs {
-            parsed.push(parse_sig(s)?);
+            parsed.insert(parse_sig(s)?);
         }
         shutdown.signals = parsed;
     }
@@ -208,36 +180,6 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
     Ok(shutdown)
 }
 
-#[cfg(feature = "tls")]
-fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
-    let mut tls = RocketTlsConfig::from_paths(napi.certs.clone(), napi.key.clone());
-    if let Some(v) = napi.prefer_server_cipher_order {
-        tls = tls.with_preferred_server_cipher_order(v);
-    }
-    if let Some(ciphers) = &napi.ciphers {
-        let mut parsed = Vec::with_capacity(ciphers.len());
-        for c in ciphers {
-            parsed.push(
-                serde_json::from_value(serde_json::Value::String(c.clone())).map_err(|e| {
-                    NapiError::new(
-                        Status::InvalidArg,
-                        format!("invalid cipher suite `{c}`: {e}"),
-                    )
-                })?,
-            );
-        }
-        tls = tls.with_ciphers(parsed);
-    }
-    if let Some(m) = &napi.mutual {
-        let mut mtls = RocketMutualTls::from_path(m.ca_certs.clone());
-        if let Some(mand) = m.mandatory {
-            mtls = mtls.mandatory(mand);
-        }
-        tls = tls.with_mutual(mtls);
-    }
-    Ok(tls)
-}
-
 // ---------------------------------------------------------------------------
 // Config NAPI class
 // ---------------------------------------------------------------------------
@@ -246,7 +188,7 @@ fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
 pub struct Config {
     profile: Option<String>,
     address: String,
-    port: u16,
+    port: u32,
     workers: u32,
     max_blocking: u32,
     ident: Option<String>,
@@ -254,10 +196,6 @@ pub struct Config {
     limits: Limits,
     temp_dir: String,
     keep_alive: u32,
-    #[cfg(feature = "tls")]
-    tls: Option<TlsConfig>,
-    #[cfg(feature = "secrets")]
-    secret_key: Option<String>,
     shutdown: Shutdown,
     log_level: String,
     cli_colors: bool,
@@ -343,6 +281,7 @@ impl Config {
     // -- runtime helpers --------------------------------------------------
 
     /// Returns the underlying `rocket::Config` built from the current fields.
+    #[allow(dead_code)]
     pub(crate) fn build(&self) -> napi::Result<RocketConfig> {
         let mut cfg = RocketConfig::default();
         if let Some(p) = &self.profile {
@@ -352,7 +291,7 @@ impl Config {
             .address
             .parse()
             .map_err(|e: std::net::AddrParseError| err(e))?;
-        cfg.port = self.port;
+        cfg.port = self.port as u16;
         cfg.workers = self.workers as usize;
         cfg.max_blocking = self.max_blocking as usize;
         cfg.ident = parse_ident(self.ident.clone())?;
@@ -364,34 +303,7 @@ impl Config {
         cfg.log_level = parse_log_level(&self.log_level)?;
         cfg.cli_colors = self.cli_colors;
 
-        #[cfg(feature = "tls")]
-        {
-            cfg.tls = self.tls.as_ref().map(build_tls).transpose()?;
-        }
-        #[cfg(feature = "secrets")]
-        if let Some(s) = &self.secret_key {
-            cfg.secret_key =
-                serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|e| {
-                    NapiError::new(Status::InvalidArg, format!("invalid secret_key: {e}"))
-                })?;
-        }
-
         Ok(cfg)
-    }
-
-    /// Returns `true` if TLS is enabled (requires the `tls` feature and a
-    /// configured ciphersuite).
-    #[cfg(feature = "tls")]
-    #[napi]
-    pub fn tls_enabled(&self) -> bool {
-        self.build().map(|c| c.tls_enabled()).unwrap_or(false)
-    }
-
-    /// Returns `true` if mTLS is enabled (requires the `mtls` feature).
-    #[cfg(feature = "tls")]
-    #[napi]
-    pub fn mtls_enabled(&self) -> bool {
-        self.build().map(|c| c.mtls_enabled()).unwrap_or(false)
     }
 
     // -- getters / setters ------------------------------------------------
@@ -417,12 +329,12 @@ impl Config {
     }
 
     #[napi(getter)]
-    pub fn port(&self) -> u16 {
+    pub fn port(&self) -> u32 {
         self.port
     }
     #[napi(setter)]
     pub fn set_port(&mut self, value: u16) {
-        self.port = value;
+        self.port = value as u32;
     }
 
     #[napi(getter)]
@@ -492,37 +404,6 @@ impl Config {
         self.keep_alive = value;
     }
 
-    #[cfg(feature = "tls")]
-    #[napi(getter)]
-    pub fn tls(&self) -> Option<TlsConfig> {
-        self.tls.clone()
-    }
-    #[cfg(feature = "tls")]
-    #[napi(setter)]
-    pub fn set_tls(&mut self, value: Option<TlsConfig>) -> napi::Result<()> {
-        if let Some(t) = &value {
-            build_tls(t)?; // validate eagerly
-        }
-        self.tls = value;
-        Ok(())
-    }
-
-    #[cfg(feature = "secrets")]
-    #[napi(getter)]
-    pub fn secret_key(&self) -> Option<String> {
-        self.secret_key.clone()
-    }
-    #[cfg(feature = "secrets")]
-    #[napi(setter)]
-    pub fn set_secret_key(&mut self, value: Option<String>) -> napi::Result<()> {
-        if let Some(s) = &value {
-            serde_json::from_value::<SecretKey>(serde_json::Value::String(s.clone()))
-                .map_err(|e| NapiError::new(Status::InvalidArg, format!("invalid secret_key: {e}")))?;
-        }
-        self.secret_key = value;
-        Ok(())
-    }
-
     #[napi(getter)]
     pub fn shutdown(&self) -> Shutdown {
         self.shutdown.clone()
@@ -561,7 +442,7 @@ impl Config {
         Config {
             profile: Some(cfg.profile.as_str().to_string()),
             address: cfg.address.to_string(),
-            port: cfg.port,
+            port: cfg.port as u32,
             workers: cfg.workers as u32,
             max_blocking: cfg.max_blocking as u32,
             ident: cfg.ident.as_str().map(|s| s.to_string()),
@@ -572,12 +453,6 @@ impl Config {
             },
             temp_dir: cfg.temp_dir.relative().display().to_string(),
             keep_alive: cfg.keep_alive,
-            #[cfg(feature = "tls")]
-            tls: None,
-            #[cfg(feature = "secrets")]
-            secret_key: serde_json::to_value(&cfg.secret_key)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
             shutdown: Shutdown {
                 ctrlc: Some(cfg.shutdown.ctrlc),
                 signals: Some(
@@ -587,8 +462,8 @@ impl Config {
                         .map(|s| format!("{s:?}").to_ascii_lowercase())
                         .collect(),
                 ),
-                grace: Some(cfg.shutdown.grace),
-                mercy: Some(cfg.shutdown.mercy),
+                grace: Some(cfg.shutdown.grace as u32),
+                mercy: Some(cfg.shutdown.mercy as u32),
                 force: Some(cfg.shutdown.force),
             },
             log_level: cfg.log_level.to_string(),
@@ -605,7 +480,7 @@ impl Config {
             self.set_address(v)?;
         }
         if let Some(v) = init.port {
-            self.port = v;
+            self.port = v as u32;
         }
         if let Some(v) = init.workers {
             self.workers = v;
@@ -632,14 +507,6 @@ impl Config {
         if let Some(v) = init.keep_alive {
             self.keep_alive = v;
         }
-        #[cfg(feature = "tls")]
-        if let Some(v) = init.tls {
-            self.set_tls(Some(v))?;
-        }
-        #[cfg(feature = "secrets")]
-        if let Some(v) = init.secret_key {
-            self.set_secret_key(Some(v))?;
-        }
         if let Some(v) = init.shutdown {
             self.set_shutdown(v)?;
         }
@@ -654,13 +521,6 @@ impl Config {
 }
 
 /// Partial override object accepted by [`Config::try_from`] / [`Config::from`].
-///
-/// Every field is optional; supplied values override the debug defaults,
-/// mirroring `Config::try_from(figment.merge(...))`.
-///
-/// `identNone` / `ipHeaderNone` force the corresponding value to `None`
-/// (server identity or client-IP header disabled), since `null` alone cannot
-/// distinguish "unset" from "disable" for these `Option` fields.
 #[napi(object)]
 pub struct ConfigInit {
     pub profile: Option<String>,
@@ -675,10 +535,6 @@ pub struct ConfigInit {
     pub limits: Option<Limits>,
     pub temp_dir: Option<String>,
     pub keep_alive: Option<u32>,
-    #[cfg(feature = "tls")]
-    pub tls: Option<TlsConfig>,
-    #[cfg(feature = "secrets")]
-    pub secret_key: Option<String>,
     pub shutdown: Option<Shutdown>,
     pub log_level: Option<String>,
     pub cli_colors: Option<bool>,

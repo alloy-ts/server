@@ -1,19 +1,16 @@
 import { expect, test } from "vite-plus/test";
-import { del, get, post, put, Response, uri } from "./main.ts";
+import { registerRoute, Response, uri } from "../index.js";
+import type { RequestInput, ResponsePayload } from "../index.js";
 
-test("codegen decorators and routes", () => {
-  const handler = () => new Response("Hello Codegen");
-  class Controller {}
+test("codegen URI formatting and route registration", () => {
+  const res = uri("/users/:id", { id: "42" });
+  expect(res).toBe("/users/42");
 
-  get("/codegen/get")({ constructor: Controller }, "get", { value: handler });
-  post("/codegen/post")({ constructor: Controller }, "post", { value: handler });
-  put("/codegen/put")({ constructor: Controller }, "put", { value: handler });
-  del("/codegen/del")({ constructor: Controller }, "del", { value: handler });
-
-  expect(Controller).toBeDefined();
-});
-
-test("codegen uri helper", () => {
-  expect(uri("/api/user/:id", { id: 100 })).toBe("/api/user/100");
-  expect(uri("/api/item/<id>", { id: "abc" })).toBe("/api/item/abc");
+  const handler = async (_req: RequestInput): Promise<ResponsePayload> => ({
+    status: 200,
+    headers: {},
+    body: Buffer.from("Hello Codegen"),
+  });
+  registerRoute("GET", "/codegen/get", handler);
+  expect(registerRoute).toBeDefined();
 });

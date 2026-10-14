@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { file, launch, registerRoute, Response, serve, Server } from "./main.ts";
+import { file, launch, registerRoute, Response, serve, Server } from "../index.js";
 
 test("Server class and serve function", () => {
   expect(typeof serve).toBe("function");

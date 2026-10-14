@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 import type { RequestInput, ResponsePayload } from "../index.js";
-import { registerRoute } from "./main.ts";
+import { registerRoute } from "../index.js";
 
 test("Handler function registration and execution", async () => {
   const handler = async (req: RequestInput): Promise<ResponsePayload> => {

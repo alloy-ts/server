@@ -1,26 +1,4 @@
 //! # NAPI bindings that bridge Rocket's runtime to TypeScript handlers.
-//!
-//! Rocket's real codegen (`#[get]`, `routes!`, `derive(..)`, `uri!`) are Rust
-//! *procedural macros* and cannot cross the N-API boundary. This module is the
-//! NAPI equivalent of the *responsibilities* those macros perform:
-//!
-//! * `#[get("/p")]` / `routes!`  -> [`serve`] + the route-table parser, which at
-//!   runtime build the same `&[Route]`-equivalent that Rocket's codegen emits,
-//!   except the handler bodies live in JavaScript.
-//! * `uri!` type-checked construction -> the TS-side `uri()` builder (see the
-//!   codegen layer); this module only carries the request/response wire types.
-//!
-//! Each registered JS handler is wrapped in a [`rocket::route::Handler`] whose
-//! `handle` calls the JS function through a [`napi::threadsafe_function`] (so it
-//! can run on any Rocket worker thread) and builds a [`rocket::Response`] from
-//! the JS return value, mirroring the "generated handler validates args, calls
-//! the function, uses the `Responder` to build a `Response`" semantics described
-//! in `rocket_codegen`'s route-attribute docs.
-//!
-//! The public surface below (`serve`, `Response`, `file`, `register_route`,
-//! `launch`, `Server`) is the single source of truth: `npm run build` generates
-//! `index.js` / `index.d.ts` from these `#[napi]` exports, so no hand-written
-//! `.ts` shim is needed.
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -35,17 +13,17 @@ use napi::JsObject;
 use napi::ValueType;
 use napi_derive::napi;
 
-use rocket::config::Config;
 use rocket::data::ByteUnit;
 use rocket::http::{Header, Method, Status as RocketStatus};
 use rocket::request::Request;
 use rocket::response::Response as RocketResponse;
-use rocket::route::{Handler, Outcome, Route};
-use rocket::{Data, Shutdown};
+use rocket::route::{Handler, Outcome, Route as RocketRouteHandle};
+use rocket::{Data, Shutdown as RocketShutdownHandle};
 
-/// Wire type sent from Rust -> JS for every request. Mirrors the request data
-/// Rocket's generated route handler would have extracted (method, uri, headers,
-/// body, and the `:param` / `<param>` segments) before calling the user fn.
+// ---------------------------------------------------------------------------
+// Wire Types & Response
+// ---------------------------------------------------------------------------
+
 #[napi(object)]
 pub struct RequestInput {
     pub method: String,
@@ -56,7 +34,6 @@ pub struct RequestInput {
     pub params: HashMap<String, String>,
 }
 
-/// Init passed to the `Response` constructor / static helpers.
 #[napi(object)]
 #[derive(Clone)]
 pub struct ResponseInit {
@@ -64,12 +41,6 @@ pub struct ResponseInit {
     pub headers: Option<HashMap<String, String>>,
 }
 
-/// The `Response` value a JS handler returns (or a static route value). Mirrors
-/// the value Rocket's `Responder` trait would turn into a `Response`.
-///
-/// Fields are private and exposed as getters returning owned values: napi cannot
-/// derive `ToNapiValue` for `&mut Buffer`, but the instance is still structurally
-/// `{ status, headers, body }`, so it reads back into [`ResponsePayload`].
 #[napi]
 pub struct Response {
     status: u32,
@@ -94,8 +65,6 @@ impl Response {
         self.body.as_ref().map(|b| Buffer::from(b.as_ref().to_vec()))
     }
 
-    /// `new Response(body, init)` — `body` may be a `string`, `Uint8Array`, or
-    /// `null` (matching the Bun/Web `Response` shape).
     #[napi(constructor)]
     pub fn new(body: Option<Unknown>, init: Option<ResponseInit>) -> napi::Result<Self> {
         let body = match body {
@@ -122,8 +91,6 @@ impl Response {
         })
     }
 
-    /// `Response.json(data, init)` — stringifies `data` as JSON with the
-    /// `application/json` content type.
     #[napi]
     pub fn json(data: serde_json::Value, init: Option<ResponseInit>) -> napi::Result<Self> {
         let init = init.unwrap_or(ResponseInit {
@@ -141,7 +108,6 @@ impl Response {
         })
     }
 
-    /// `Response.redirect(url, status)` — `status` defaults to 302.
     #[napi]
     pub fn redirect(url: String, status: Option<u32>) -> Self {
         let mut headers = HashMap::new();
@@ -154,10 +120,16 @@ impl Response {
     }
 }
 
-/// Wire type read back *from* JS. A `Response` class instance is structurally
-/// `{ status, headers, body }`, so napi deserializes it into this plain object.
-/// (napi-derive does not generate `FromNapiValue` for `#[napi]` classes, which is
-/// why this mirror exists.)
+impl Response {
+    pub fn to_payload(&self) -> ResponsePayload {
+        ResponsePayload {
+            status: Some(self.status),
+            headers: Some(self.headers.clone()),
+            body: self.body.as_ref().map(|b| Buffer::from(b.as_ref().to_vec())),
+        }
+    }
+}
+
 #[napi(object)]
 pub struct ResponsePayload {
     pub status: Option<u32>,
@@ -165,7 +137,6 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
-/// `Buffer` is not `Clone`, so clone it by copying the bytes.
 impl Clone for ResponsePayload {
     fn clone(&self) -> Self {
         Self {
@@ -176,36 +147,27 @@ impl Clone for ResponsePayload {
     }
 }
 
-/// Lazily-served static file marker returned by [`file`].
 #[napi(object)]
 #[derive(Clone)]
 pub struct StaticFile {
     pub path: String,
 }
 
-/// `Alloy.file(path)` — marks a route value as a file served from disk.
 #[napi]
 pub fn file(path: String) -> StaticFile {
     StaticFile { path }
 }
 
-/// A JS route handler, callable from any Rocket worker thread. The `Return` type
-/// is `Promise<ResponsePayload>` so async TS handlers (`async (req) => ...`) are
-/// awaited on the Rust side.
 type RouteHandlerFn =
     ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, RequestInput, Status, false, false, 0>;
 
-/// The resolved intent of one route entry after parsing the JS `routes` table.
 #[derive(Clone)]
 enum RouteHandler {
-    /// `ThreadsafeFunction` is not `Clone`, so one handle is shared by `Arc`
-    /// across the per-method routes it is mounted on.
     Dynamic(Arc<RouteHandlerFn>),
     Static(ResponsePayload),
     File(String),
 }
 
-/// A Rocket `Handler` that dispatches to one of the three [`RouteHandler`] forms.
 #[derive(Clone)]
 struct JsHandler {
     handler: RouteHandler,
@@ -219,9 +181,6 @@ impl Handler for JsHandler {
             RouteHandler::Dynamic(tsfn) => {
                 let input = build_request(request, data, &self.pattern).await;
                 let output = match tsfn.call_async(input).await {
-                    // `Promise::await` already formats any JS rejection into an
-                    // error; map both call and await failures to a 500, which
-                    // Rocket's error catcher turns into the response.
                     Ok(promise) => match promise.await {
                         Ok(out) => out,
                         Err(_) => return Outcome::Error(RocketStatus::InternalServerError),
@@ -243,8 +202,6 @@ impl Handler for JsHandler {
     }
 }
 
-/// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
-/// including any `:param` / `<param>` path segments.
 async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
@@ -256,8 +213,6 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
         .map(|h| (h.name().as_str().to_string(), h.value().to_string()))
         .collect();
 
-    // Read up to 1 MiB of body. Larger bodies are truncated for the MVP; raise
-    // the `ByteUnit` limit (or stream) when needed.
     let body = match data.open(ByteUnit::Megabyte(1)).into_bytes().await {
         Ok(capped) => Some(Buffer::from(capped.value)),
         Err(_) => None,
@@ -275,8 +230,6 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
     }
 }
 
-/// Align a Rocket route pattern's `<param>` segments with the actual request
-/// path segments to populate `req.params`.
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let p_segs: Vec<&str> = pattern
         .trim_start_matches('/')
@@ -291,7 +244,6 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
-            // `<_..>` catch-all -> skip; `<name>` or `<name..>` -> capture.
             let name = inner
                 .strip_suffix("..>")
                 .or_else(|| inner.strip_suffix('>'));
@@ -307,8 +259,6 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     params
 }
 
-/// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
-/// (`<name>`, `<_..>`).
 fn translate_pattern(p: &str) -> String {
     let mut out = String::with_capacity(p.len() + 4);
     let bytes = p.as_bytes();
@@ -323,18 +273,19 @@ fn translate_pattern(p: &str) -> String {
             }
             out.push('>');
         } else if bytes[i] == b'*' {
-            out.push_str("<_..>");
+            out.push_str("<path..>");
             i += 1;
         } else {
             out.push(bytes[i] as char);
             i += 1;
         }
     }
+    if out.is_empty() || !out.starts_with('/') {
+        out.insert(0, '/');
+    }
     out
 }
 
-/// Build a Rocket `Response` from a JS handler's `Response` return value,
-/// mirroring the `Responder` step in Rocket's generated code.
 fn build_response(out: ResponsePayload) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(out.status.unwrap_or(200) as u16) {
@@ -350,7 +301,6 @@ fn build_response(out: ResponsePayload) -> RocketResponse<'static> {
     builder.finalize()
 }
 
-/// Options for [`serve`]; mirrors the Bun/Alloy `serve({ ... })` shape.
 #[napi(object)]
 pub struct ServeOptions {
     pub port: Option<u32>,
@@ -358,37 +308,39 @@ pub struct ServeOptions {
     pub unix: Option<String>,
     #[allow(deprecated)]
     pub routes: Option<JsObject>,
-    /// The `fetch(req)` fallback. Typed as the bindgen `Function` because
-    /// `napi::JsFunction` implements neither `FromNapiValue` nor `ToNapiValue`.
     pub fetch: Option<Function<'static, RequestInput, Promise<ResponsePayload>>>,
 }
 
 const ALL_METHODS: &[&str] = &["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
-/// Parse one `routes` table value into `(method, handler)` pairs. `None` method
-/// means "register for every method".
 fn collect_routes(value: Unknown) -> napi::Result<Vec<(Option<String>, RouteHandler)>> {
     match value.get_type()? {
         ValueType::Function => {
-            // `JsFunction` has no `FromNapiValue`, so a nested (non-parameter)
-            // function must be read as the bindgen `Function` type, which does.
             let f: Function<'_, RequestInput, Promise<ResponsePayload>> = unsafe { value.cast() }?;
             let tsfn: RouteHandlerFn = f.build_threadsafe_function::<RequestInput>().build()?;
             Ok(vec![(None, RouteHandler::Dynamic(Arc::new(tsfn)))])
         }
         ValueType::Object => {
-            // A `file(...)` marker is a plain `{ path }` object.
-            if let Ok(file) = unsafe { value.cast::<StaticFile>() } {
-                return Ok(vec![(None, RouteHandler::File(file.path))]);
-            }
-            // A `Response` instance created via `new Response(...)` /
-            // `Response.json(..)` / `Response.redirect(..)`.
-            if let Ok(resp) = unsafe { value.cast::<ResponsePayload>() } {
-                return Ok(vec![(None, RouteHandler::Static(resp))]);
-            }
-            // Otherwise it's a per-method map: `{ GET, POST, ... }`.
             #[allow(deprecated)]
             let obj: JsObject = unsafe { value.cast() }?;
+
+            if let Ok(path) = obj.get_named_property::<String>("path") {
+                if !obj.has_named_property("status")? {
+                    return Ok(vec![(None, RouteHandler::File(path))]);
+                }
+            }
+
+            if obj.has_named_property("status")? || obj.has_named_property("headers")? || obj.has_named_property("body")? {
+                let status: Option<u32> = obj.get_named_property("status").ok();
+                let headers: Option<HashMap<String, String>> = obj.get_named_property("headers").ok();
+                let body: Option<Buffer> = obj.get_named_property("body").ok();
+                return Ok(vec![(None, RouteHandler::Static(ResponsePayload {
+                    status,
+                    headers,
+                    body,
+                }))]);
+            }
+
             let names = obj.get_property_names()?;
             let len = names.get_array_length()?;
             let mut out = Vec::new();
@@ -408,16 +360,8 @@ fn collect_routes(value: Unknown) -> napi::Result<Vec<(Option<String>, RouteHand
     }
 }
 
-/// Captured `Shutdown` handle so `Server::stop` can terminate the running server.
-static SHUTDOWN: OnceLock<Mutex<Option<Shutdown>>> = OnceLock::new();
+static SHUTDOWN_HANDLE: OnceLock<Mutex<Option<RocketShutdownHandle>>> = OnceLock::new();
 
-/// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
-/// launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
-/// route, and boots it on a dedicated runtime, returning a [`Server`] handle
-/// immediately (mirroring Bun's synchronous `serve` return).
-///
-/// This is deliberately *not* an `async fn`: the JS handles (`JsObject`,
-/// `Function`) are not `Send`, so the generated future would not be spawnable.
 #[napi]
 pub fn serve(options: ServeOptions) -> napi::Result<Server> {
     let port = options.port.unwrap_or(3000) as u16;
@@ -433,7 +377,7 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
     };
     let url = format!("http://{}:{}", hostname, port);
 
-    let mut rocket_routes: Vec<Route> = Vec::new();
+    let mut rocket_routes: Vec<RocketRouteHandle> = Vec::new();
     if let Some(routes) = options.routes {
         let names = routes.get_property_names()?;
         let len = names.get_array_length()?;
@@ -449,7 +393,7 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
                         napi::Error::new(Status::InvalidArg, format!("invalid method: {method}"))
                     })?;
                     let translated = translate_pattern(&pattern);
-                    rocket_routes.push(Route::new(
+                    rocket_routes.push(RocketRouteHandle::new(
                         m,
                         &translated,
                         JsHandler {
@@ -462,28 +406,25 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
         }
     }
 
-    // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = options.fetch {
         let tsfn: RouteHandlerFn = fetch.build_threadsafe_function::<RequestInput>().build()?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
-            rocket_routes.push(Route::new(
+            rocket_routes.push(RocketRouteHandle::new(
                 Method::from_str(m).unwrap(),
-                "<_..>",
+                "/<path..>",
                 JsHandler {
                     handler: RouteHandler::Dynamic(tsfn.clone()),
-                    pattern: "<_..>".to_string(),
+                    pattern: "/<path..>".to_string(),
                 },
             ));
         }
     }
 
-    let mut config = Config::default();
+    let mut config = rocket::config::Config::default();
     config.port = port;
     config.address = address;
 
-    // `shutdown()` only exists on `Rocket<Ignite>`, so ignite before taking the
-    // handle, then serve on a runtime owned by a background thread.
     let rt = rocket::tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -499,7 +440,7 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
         .map_err(|e| napi::Error::new(Status::GenericFailure, e.to_string()))?;
 
     let shutdown = rocket.shutdown();
-    *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);
+    *SHUTDOWN_HANDLE.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);
 
     std::thread::spawn(move || {
         let _ = rt.block_on(rocket.launch());
@@ -511,7 +452,6 @@ pub fn serve(options: ServeOptions) -> napi::Result<Server> {
     })
 }
 
-/// Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`.
 #[napi]
 pub struct Server {
     pub url: String,
@@ -520,20 +460,14 @@ pub struct Server {
 
 #[napi]
 impl Server {
-    /// Gracefully stop the server (waits for in-flight requests).
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(shutdown) = SHUTDOWN.get().and_then(|m| m.lock().unwrap().take()) {
+        if let Some(shutdown) = SHUTDOWN_HANDLE.get().and_then(|m| m.lock().unwrap().take()) {
             shutdown.notify();
         }
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// Low-level registry API: `register_route` + `launch` for the codegen/decorator
-// path that builds routes one-at-a-time before booting.
-// ---------------------------------------------------------------------------
 
 struct RouteSpec {
     method: String,
@@ -547,11 +481,6 @@ fn routes() -> &'static Mutex<Vec<RouteSpec>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
-///
-/// The `handler` JS function must return a `Promise<Response>` (i.e. be an
-/// `async` function returning a `Response`). Route definitions accumulate until
-/// [`launch`] is called, which builds and boots the Rocket instance.
 #[napi]
 pub fn register_route(
     method: String,
@@ -567,19 +496,16 @@ pub fn register_route(
     Ok(())
 }
 
-/// NAPI equivalent of `#[launch]`: build the `Rocket<Build>` from every route
-/// registered via [`register_route`], mount them, and boot the server. Resolves
-/// once the server shuts down.
 #[napi]
 pub async fn launch() -> napi::Result<()> {
     let specs = std::mem::take(&mut *routes().lock().unwrap());
-    let mut rocket_routes: Vec<Route> = Vec::with_capacity(specs.len());
+    let mut rocket_routes: Vec<RocketRouteHandle> = Vec::with_capacity(specs.len());
     for spec in specs {
         let method = Method::from_str(&spec.method).map_err(|()| {
             napi::Error::new(Status::InvalidArg, format!("invalid method: {}", spec.method))
         })?;
         let translated = translate_pattern(&spec.path);
-        rocket_routes.push(Route::new(
+        rocket_routes.push(RocketRouteHandle::new(
             method,
             &translated,
             JsHandler {

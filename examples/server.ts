@@ -1,6 +1,6 @@
-import { Alloy, Response } from "../src/main.ts";
+import { Response, serve, file } from "../index.js";
 
-const server = Alloy.serve({
+const server = serve({
   port: 3000,
   routes: {
     // Static routes
@@ -34,7 +34,7 @@ const server = Alloy.serve({
     "/blog/hello": Response.redirect("/blog/hello/world"),
 
     // Serve a file by lazily loading it into memory
-    "/favicon.ico": Alloy.file("./favicon.ico"),
+    "/favicon.ico": file("./favicon.ico"),
   },
 
   // (optional) fallback for unmatched routes:
@@ -44,3 +44,4 @@ const server = Alloy.serve({
 });
 
 console.log(`Server running at ${server.url}`);
+server.stop();

@@ -7,122 +7,232 @@
  * flavor napi-rs can build is listed, because `NAPI_RS_NATIVE_LIBRARY_PATH`
  * can point the loader at a WASI artifact this package does not build itself.
  */
-export declare const __napiBindingTarget: "native" | "wasm32-wasi" | "wasm32-wasip1";
+export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
-/**
- * The `Response` value a JS handler returns (or a static route value). Mirrors
- * the value Rocket's `Responder` trait would turn into a `Response`.
- *
- * Fields are private and exposed as getters returning owned values: napi cannot
- * derive `ToNapiValue` for `&mut Buffer`, but the instance is still structurally
- * `{ status, headers, body }`, so it reads back into [`ResponsePayload`].
- */
+/** NAPI mirror of Rocket's `Catcher` metadata. */
+export declare class Catcher {
+  /** Creates a catcher for the given HTTP status code, or a default catcher if code is null. */
+  constructor(code?: number | undefined | null, name?: string | undefined | null)
+  get name(): string | null
+  get base(): string
+  get code(): number | null
+  mapBase(base: string): void
+}
+
+export declare class Config {
+  /** Create a `Config` seeded with Rocket's `debug` defaults. */
+  constructor()
+  /** Returns the default configuration for the debug profile. */
+  static debugDefault(): Config
+  /** Returns the default configuration for the release profile. */
+  static releaseDefault(): Config
+  /** Returns the default configuration for the active profile. */
+  static defaultConfig(): Config
+  /**
+   * Returns the configuration extracted from Rocket's default figment
+   * (`Config::figment()`), i.e. defaults merged with `Rocket.toml` and
+   * `ROCKET_*` environment variables.
+   */
+  static figment(): Config
+  /**
+   * Builds a `Config` from a partial override object, mirroring
+   * `Config::try_from(provider)` where the provider is a set of overrides
+   * merged onto the debug defaults.
+   */
+  static tryFrom(init: ConfigInit): Config
+  /**
+   * Builds a `Config` from a partial override object, panicking on error.
+   * Mirrors `Config::from(provider)`.
+   */
+  static from(init: ConfigInit): Config
+  /** All stringy parameter names. */
+  static parameters(): Array<string>
+  get profile(): string | null
+  set profile(value: string | undefined | null)
+  get address(): string
+  set address(value: string)
+  get port(): number
+  set port(value: number)
+  get workers(): number
+  set workers(value: number)
+  get maxBlocking(): number
+  set maxBlocking(value: number)
+  get ident(): string | null
+  set ident(value: string | undefined | null)
+  get ipHeader(): string | null
+  set ipHeader(value: string | undefined | null)
+  get limits(): Limits
+  set limits(value: Limits)
+  get tempDir(): string
+  set tempDir(value: string)
+  get keepAlive(): number
+  set keepAlive(value: number)
+  get shutdown(): Shutdown
+  set shutdown(value: Shutdown)
+  get logLevel(): string
+  set logLevel(value: string)
+  get cliColors(): boolean
+  set cliColors(value: boolean)
+}
+
 export declare class Response {
-  get status(): number;
-  get headers(): Record<string, string>;
-  get body(): Buffer | null;
-  /**
-   * `new Response(body, init)` — `body` may be a `string`, `Uint8Array`, or
-   * `null` (matching the Bun/Web `Response` shape).
-   */
-  constructor(body?: unknown | undefined | null, init?: ResponseInit | undefined | null);
-  /**
-   * `Response.json(data, init)` — stringifies `data` as JSON with the
-   * `application/json` content type.
-   */
-  static json(data: any, init?: ResponseInit | undefined | null): Response;
-  /** `Response.redirect(url, status)` — `status` defaults to 302. */
-  static redirect(url: string, status?: number | undefined | null): Response;
+  get status(): number
+  get headers(): Record<string, string>
+  get body(): Buffer | null
+  constructor(body?: unknown | undefined | null, init?: ResponseInit | undefined | null)
+  static json(data: any, init?: ResponseInit | undefined | null): Response
+  static redirect(url: string, status?: number | undefined | null): Response
 }
 
-/** Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`. */
+/** NAPI mirror of Rocket's `Route` metadata. */
+export declare class Route {
+  name?: string
+  method: string
+  uri: string
+  rank: number
+  format?: string
+  /** Creates a new Route specification with default rank computed by Rocket rules. */
+  constructor(method: string, uri: string, name?: string | undefined | null)
+  /** Creates a Route with a specific rank. */
+  static ranked(rank: number | undefined | null, method: string, uri: string, name?: string | undefined | null): Route
+}
+
+/** NAPI mirror of Rocket's `RouteUri`. */
+export declare class RouteUri {
+  /** Creates a new `RouteUri` from base and uri origin path. */
+  constructor(base: string, uri: string)
+  get base(): string
+  get unmountedOrigin(): string
+  get origin(): string
+  path(): string
+  query(): string | null
+  asStr(): string
+}
+
 export declare class Server {
-  url: string;
-  port: number;
-  /** Gracefully stop the server (waits for in-flight requests). */
-  stop(): void;
+  url: string
+  port: number
+  stop(): void
 }
 
-/** `Alloy.file(path)` — marks a route value as a file served from disk. */
-export declare function file(path: string): StaticFile;
+export declare const ADDRESS: string
+
+export declare const CLI_COLORS: string
+
+/** Partial override object accepted by [`Config::try_from`] / [`Config::from`]. */
+export interface ConfigInit {
+  profile?: string
+  address?: string
+  port?: number
+  workers?: number
+  maxBlocking?: number
+  ident?: string
+  identNone?: boolean
+  ipHeader?: string
+  ipHeaderNone?: boolean
+  limits?: Limits
+  tempDir?: string
+  keepAlive?: number
+  shutdown?: Shutdown
+  logLevel?: string
+  cliColors?: boolean
+}
+
+export declare const DEBUG_PROFILE: string
+
+export declare const DEFAULT_PROFILE: string
+
+export declare function file(path: string): StaticFile
+
+export declare const IDENT: string
+
+export declare const IP_HEADER: string
+
+export declare const KEEP_ALIVE: string
+
+export declare function launch(): Promise<void>
 
 /**
- * NAPI equivalent of `#[launch]`: build the `Rocket<Build>` from every route
- * registered via [`register_route`], mount them, and boot the server. Resolves
- * once the server shuts down.
- */
-export declare function launch(): Promise<void>;
-
-/**
- * NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
+ * Mirrors `rocket::data::Limits`.
  *
- * The `handler` JS function must return a `Promise<Response>` (i.e. be an
- * `async` function returning a `Response`). Route definitions accumulate until
- * [`launch`] is called, which builds and boots the Rocket instance.
+ * Each entry maps a data-type name (e.g. `"form"`, `"json"`) to a size
+ * expression accepted by `ByteUnit`: an integer number of bytes (`"32768"`)
+ * or an SI unit string (`"32KiB"`).
  */
-export declare function registerRoute(
-  method: string,
-  path: string,
-  handler: (arg: RequestInput) => Promise<ResponsePayload>,
-): void;
+export interface Limits {
+  limits: Record<string, string>
+}
 
-/**
- * Wire type sent from Rust -> JS for every request. Mirrors the request data
- * Rocket's generated route handler would have extracted (method, uri, headers,
- * body, and the `:param` / `<param>` segments) before calling the user fn.
- */
+export declare const LIMITS: string
+
+export declare const LOG_LEVEL: string
+
+export declare const MAX_BLOCKING: string
+
+export declare const PORT: string
+
+export declare function registerRoute(method: string, path: string, handler: (arg: RequestInput) => Promise<ResponsePayload>): void
+
+export declare const RELEASE_PROFILE: string
+
 export interface RequestInput {
-  method: string;
-  path: string;
-  query: string;
-  headers: Array<[string, string]>;
-  body?: Buffer;
-  params: Record<string, string>;
+  method: string
+  path: string
+  query: string
+  headers: Array<[string, string]>
+  body?: Buffer
+  params: Record<string, string>
 }
 
-/** Init passed to the `Response` constructor / static helpers. */
 export interface ResponseInit {
-  status?: number;
-  headers?: Record<string, string>;
+  status?: number
+  headers?: Record<string, string>
 }
 
-/**
- * Wire type read back *from* JS. A `Response` class instance is structurally
- * `{ status, headers, body }`, so napi deserializes it into this plain object.
- * (napi-derive does not generate `FromNapiValue` for `#[napi]` classes, which is
- * why this mirror exists.)
- */
 export interface ResponsePayload {
-  status?: number;
-  headers?: Record<string, string>;
-  body?: Buffer;
+  status?: number
+  headers?: Record<string, string>
+  body?: Buffer
+}
+
+export declare const SECRET_KEY: string
+
+export declare function serve(options: ServeOptions): Server
+
+export interface ServeOptions {
+  port?: number
+  hostname?: string
+  unix?: string
+  routes?: object
+  fetch?: (arg: RequestInput) => Promise<ResponsePayload>
 }
 
 /**
- * NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
- * launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
- * route, and boots it on a dedicated runtime, returning a [`Server`] handle
- * immediately (mirroring Bun's synchronous `serve` return).
+ * Mirrors `rocket::config::Shutdown`.
  *
- * This is deliberately *not* an `async fn`: the JS handles (`JsObject`,
- * `Function`) are not `Send`, so the generated future would not be spawnable.
+ * All fields are optional so a partial override can be supplied; omitted
+ * fields fall back to Rocket's `Shutdown::default()`. Signal names use
+ * Rocket's lowercase serde spelling (`"term"`, `"hup"`, ...).
  */
-export declare function serve(options: ServeOptions): Server;
-
-/** Options for [`serve`]; mirrors the Bun/Alloy `serve({ ... })` shape. */
-export interface ServeOptions {
-  port?: number;
-  hostname?: string;
-  unix?: string;
-  routes?: object;
-  /**
-   * The `fetch(req)` fallback. Typed as the bindgen `Function` because
-   * `napi::JsFunction` implements neither `FromNapiValue` nor `ToNapiValue`.
-   */
-  fetch?: (arg: RequestInput) => Promise<ResponsePayload>;
+export interface Shutdown {
+  ctrlc?: boolean
+  signals?: Array<string>
+  grace?: number
+  mercy?: number
+  force?: boolean
 }
 
-/** Lazily-served static file marker returned by [`file`]. */
+export declare const SHUTDOWN: string
+
 export interface StaticFile {
-  path: string;
+  path: string
 }
+
+export declare const TEMP_DIR: string
+
+export declare const TLS: string
+
+/** Type-safe URI builder helper, replacing Rocket's `uri!` macro. */
+export declare function uri(path: string, params?: Record<string, string> | undefined | null): string
+
+export declare const WORKERS: string
