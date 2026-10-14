@@ -312,7 +312,10 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 }
 
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    let mut out = String::with_capacity(pattern.len() + 2);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
