@@ -1,4 +1,6 @@
+use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use rocket::http::uri::Origin;
 use rocket::http::{MediaType, Method};
 use rocket::route::dummy_handler;
 use rocket::Route as RocketRoute;
@@ -30,6 +32,13 @@ impl Route {
         format: Option<String>,
     ) -> napi::Result<Self> {
         let parsed_method = Method::from_str(&method).unwrap_or(Method::Get);
+
+        if Origin::parse_route(&uri).is_err() {
+            return Err(napi::Error::new(
+                Status::InvalidArg,
+                format!("Invalid Rocket route URI: '{uri}'"),
+            ));
+        }
 
         let rocket_route = if let Some(r) = rank {
             RocketRoute::ranked(Some(r as isize), parsed_method, &uri, dummy_handler)
@@ -85,6 +94,9 @@ impl Route {
     /// wild path, no query        -> -1
     #[napi]
     pub fn default_rank(uri: String) -> i32 {
+        if Origin::parse_route(&uri).is_err() {
+            return -1;
+        }
         let route = RocketRoute::new(Method::Get, &uri, dummy_handler);
         route.rank as i32
     }
