@@ -7,7 +7,7 @@
  * 3. Launching `Alloy.serve` with custom configuration options
  */
 
-import { Alloy, Config, Response } from "../dist/main.mjs";
+import { Alloy, Config, Response } from "../dist/index.js";
 
 // 1. Create and customize Rocket configuration
 const config = Config.debugDefault();

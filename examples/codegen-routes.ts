@@ -15,10 +15,10 @@ import {
   getRegisteredRoutesMeta,
   parseRoutePattern,
   post,
-  Response,
   route,
   uri,
-} from "../dist/main.mjs";
+} from "../src/codegen.ts";
+import { Response } from "../dist/index.js";
 
 // 1. Type-safe URI construction
 const userProfileUrl = uri("/users/:id/profile?<tab>", { id: "42", tab: "settings" });

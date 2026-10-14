@@ -18,7 +18,7 @@ import {
   TEMP_DIR,
   TLS,
   WORKERS,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("Config parameter name constants", () => {
   expect(DEBUG_PROFILE).toBe("debug");

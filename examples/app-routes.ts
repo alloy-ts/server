@@ -27,7 +27,7 @@
  *   `#[launch] … .mount(..)` -> `app.launch()`
  */
 
-import { App, response } from "../dist/main.mjs";
+import { App, response } from "../dist/index.js";
 
 // #[get("/")]
 // fn hello() -> &'static str {

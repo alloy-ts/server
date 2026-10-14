@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Alloy, Config, file, Response, serve } from "./main.ts";
+import { Alloy, Config, file, Response, serve } from "../dist/index.js";
 
 test("Response creates responses with status, headers, and body", () => {
   const resp = new Response("hello world", {

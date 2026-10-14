@@ -4,7 +4,7 @@
  * Demonstrates lazily serving static files using `Alloy.file(path)`.
  */
 
-import { Alloy, Response } from "../dist/main.mjs";
+import { Alloy, Response } from "../dist/index.js";
 
 const server = Alloy.serve({
   routes: {

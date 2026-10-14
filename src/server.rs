@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
-use napi::{JsFunction, Unknown};
+use napi::{JsFunction, Unknown, ValueType};
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -111,6 +111,45 @@ impl Response {
             body_buf: None,
         }
     }
+}
+
+/// Helper function to build a Response object.
+#[napi]
+pub fn response(
+    body: Option<String>,
+    init_or_status: Option<Unknown>,
+    headers: Option<Vec<(String, String)>>,
+) -> Response {
+    if let Some(val) = init_or_status {
+        if val.get_type().ok() == Some(ValueType::Number) {
+            let status: u32 = unsafe { val.cast().unwrap_or(200) };
+            return Response::new(
+                body,
+                Some(ResponseInit {
+                    status: Some(status),
+                    headers,
+                }),
+            );
+        } else if val.get_type().ok() == Some(ValueType::Object) {
+            let obj: Object = unsafe { val.cast().unwrap() };
+            let status: Option<u32> = obj.get_named_property("status").ok();
+            let hdrs: Option<Vec<(String, String)>> = obj.get_named_property("headers").ok();
+            return Response::new(
+                body,
+                Some(ResponseInit {
+                    status,
+                    headers: hdrs.or(headers),
+                }),
+            );
+        }
+    }
+    Response::new(
+        body,
+        Some(ResponseInit {
+            status: None,
+            headers,
+        }),
+    )
 }
 
 #[napi(object)]
@@ -348,51 +387,59 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
 }
 
 #[napi]
-pub fn serve(options: Unknown) -> napi::Result<Server> {
-    let mut port: u16 = 3000;
+pub fn serve(options: Option<Unknown>) -> napi::Result<Server> {
+    let env_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok());
+
+    let mut port: u16 = env_port.unwrap_or(3000);
     let mut hostname = "0.0.0.0".to_string();
 
     let mut routes: Vec<Route> = Vec::new();
 
-    if let ValueType::Object = options.get_type()? {
-        let obj: Object = unsafe { options.clone().cast()? };
+    if let Some(options) = options {
+        if let ValueType::Object = options.get_type()? {
+            let obj: Object = unsafe { options.cast()? };
 
-        if obj.has_named_property("port")? {
-            if let Some(p) = obj.get_named_property::<Option<u32>>("port")? {
-                port = p as u16;
-            }
-        }
-        if obj.has_named_property("hostname")? {
-            if let Some(h) = obj.get_named_property::<Option<String>>("hostname")? {
-                hostname = h;
-            }
-        }
-
-        if obj.has_named_property("routes")? {
-            if let Some(table) = obj.get_named_property::<Option<Object>>("routes")? {
-                let names: Object = table.get_property_names()?;
-                let len = names.get_array_length()?;
-                for i in 0..len {
-                    let pattern: String = names.get_element(i)?;
-                    let value: Unknown = table.get_named_property(&pattern)?;
-                    mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+            if obj.has_named_property("port")? {
+                if let Some(p) = obj.get_named_property::<Option<u32>>("port")? {
+                    port = p as u16;
                 }
             }
-        }
+            if obj.has_named_property("hostname")? {
+                if let Some(h) = obj.get_named_property::<Option<String>>("hostname")? {
+                    hostname = h;
+                }
+            }
 
-        if obj.has_named_property("fetch")? {
-            if let Some(fetch) = obj.get_named_property::<Option<Unknown>>("fetch")? {
-                if fetch.get_type()? == ValueType::Function {
-                    let f = to_js_function(fetch)?;
-                    let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
-                    let tsfn_arc = Arc::new(tsfn);
-                    for m in ALL_METHODS {
-                        push_kind(
-                            RouteKind::Fn(tsfn_arc.clone()),
-                            "/<_..>",
-                            &[*m],
-                            &mut routes,
-                        );
+            if obj.has_named_property("routes")? {
+                if let Some(table) = obj.get_named_property::<Option<Object>>("routes")? {
+                    let names: Object = table.get_property_names()?;
+                    let len = names.get_array_length()?;
+                    for i in 0..len {
+                        let pattern: String = names.get_element(i)?;
+                        let value: Unknown = table.get_named_property(&pattern)?;
+                        mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+                    }
+                }
+            }
+
+            if obj.has_named_property("fetch")? {
+                if let Some(fetch) = obj.get_named_property::<Option<Unknown>>("fetch")? {
+                    if fetch.get_type()? == ValueType::Function {
+                        let f = to_js_function(fetch)?;
+                        let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+                        let tsfn_arc = Arc::new(tsfn);
+                        for m in ALL_METHODS {
+                            push_kind(
+                                RouteKind::Fn(tsfn_arc.clone()),
+                                "/<_..>",
+                                &[*m],
+                                &mut routes,
+                            );
+                        }
                     }
                 }
             }
@@ -461,6 +508,186 @@ impl Server {
             shutdown.notify();
         }
         Ok(())
+    }
+}
+
+/// App class re-expressing rocket::build() route registration in TypeScript.
+#[napi]
+pub struct App {
+    routes: Vec<Route>,
+    active_server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        App {
+            routes: Vec::new(),
+            active_server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    pub fn get(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        mount_value(handler, &path, &[Method::Get], &mut self.routes)
+    }
+
+    #[napi]
+    pub fn post(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        mount_value(handler, &path, &[Method::Post], &mut self.routes)
+    }
+
+    #[napi]
+    pub fn put(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        mount_value(handler, &path, &[Method::Put], &mut self.routes)
+    }
+
+    #[napi]
+    pub fn delete(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        mount_value(handler, &path, &[Method::Delete], &mut self.routes)
+    }
+
+    #[napi]
+    pub fn patch(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        mount_value(handler, &path, &[Method::Patch], &mut self.routes)
+    }
+
+    #[napi]
+    pub fn mount(&mut self, base: String, routes: Unknown) -> napi::Result<()> {
+        if routes.get_type()? == ValueType::Object {
+            let obj: Object = unsafe { routes.cast()? };
+            let names = obj.get_property_names()?;
+            let len = names.get_array_length()?;
+            let prefix = base.trim_end_matches('/');
+            for i in 0..len {
+                let p: String = names.get_element(i)?;
+                let full_path = if p.starts_with('/') {
+                    format!("{prefix}{p}")
+                } else {
+                    format!("{prefix}/{p}")
+                };
+                let h: Unknown = obj.get_named_property(&p)?;
+                mount_value(h, &full_path, ALL_METHODS, &mut self.routes)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[napi]
+    pub fn launch(&mut self, options: Option<Unknown>) -> napi::Result<Server> {
+        let mut port: u16 = 3000;
+        let mut hostname = "0.0.0.0".to_string();
+
+        if let Some(user_opts) = options {
+            if user_opts.get_type()? == ValueType::Object {
+                let obj: Object = unsafe { user_opts.cast()? };
+                if obj.has_named_property("port")? {
+                    if let Some(p) = obj.get_named_property::<Option<u32>>("port")? {
+                        port = p as u16;
+                    }
+                }
+                if obj.has_named_property("hostname")? {
+                    if let Some(h) = obj.get_named_property::<Option<String>>("hostname")? {
+                        hostname = h;
+                    }
+                }
+            }
+        }
+
+        let address: IpAddr = match hostname.as_str() {
+            "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            other => other.parse().unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+
+        let mut config = Config::default();
+        config.port = port;
+        config.address = address;
+
+        let routes = std::mem::take(&mut self.routes);
+        let rocket = rocket::build().configure(config).mount("/", routes);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let rt = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                match rocket.ignite().await {
+                    Ok(ignited) => {
+                        let bound_port = ignited.config().port;
+                        let shutdown = ignited.shutdown();
+                        let _ = tx.send(Ok((bound_port, shutdown)));
+                        let _ = ignited.launch().await;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e.to_string()));
+                    }
+                }
+            });
+        });
+
+        let (bound_port, shutdown) = rx
+            .recv()
+            .map_err(|_| napi::Error::new(Status::GenericFailure, "Failed to start Rocket server"))?
+            .map_err(|e| napi::Error::new(Status::GenericFailure, e))?;
+
+        let url = format!("http://{}:{}", hostname, bound_port);
+
+        let server = Server {
+            url,
+            port: bound_port as u32,
+            shutdown: Arc::new(Mutex::new(Some(shutdown))),
+        };
+
+        *self.active_server.lock().unwrap() = Some(Server {
+            url: server.url.clone(),
+            port: server.port,
+            shutdown: server.shutdown.clone(),
+        });
+
+        Ok(server)
+    }
+
+    #[napi]
+    pub fn stop(&mut self) -> napi::Result<()> {
+        if let Some(s) = self.active_server.lock().unwrap().take() {
+            s.stop()?;
+        }
+        Ok(())
+    }
+}
+
+/// Namespace providing Alloy server utilities.
+#[napi]
+pub struct Alloy;
+
+#[napi]
+impl Alloy {
+    #[napi]
+    pub fn serve(options: Option<Unknown>) -> napi::Result<Server> {
+        serve(options)
+    }
+
+    #[napi]
+    pub fn file(path: String) -> StaticFile {
+        file(path)
+    }
+
+    #[napi]
+    pub fn response(
+        body: Option<String>,
+        init_or_status: Option<Unknown>,
+        headers: Option<Vec<(String, String)>>,
+    ) -> Response {
+        response(body, init_or_status, headers)
+    }
+
+    #[napi]
+    pub fn app() -> App {
+        App::new()
     }
 }
 

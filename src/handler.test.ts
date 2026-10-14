@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Handler, Outcome, type OutcomeStatus } from "./main.ts";
+import { Handler, Outcome, type OutcomeStatus } from "../dist/index.js";
 
 test("Outcome static constructors and fields", () => {
   const succ = Outcome.success(Buffer.from("hello"));

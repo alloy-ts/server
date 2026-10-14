@@ -8,7 +8,7 @@
  * 4. Path parameter parsing (`req.params.id`)
  */
 
-import { Alloy, Response } from "../dist/main.mjs";
+import { Alloy, Response } from "../dist/index.js";
 
 interface Todo {
   id: string;

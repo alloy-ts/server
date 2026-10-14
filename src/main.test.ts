@@ -1,19 +1,14 @@
 import { expect, test } from "vite-plus/test";
+import { Alloy, App, Config, file, Response, response } from "../dist/index.js";
 import {
-  Alloy,
-  App,
   buildRouteUri,
-  Config,
-  file,
   generateRoutesTypeDefinitions,
   get,
   getRegisteredRoutesMeta,
   parseRoutePattern,
   post,
-  Response,
-  response,
   uri,
-} from "./main.ts";
+} from "./codegen.ts";
 
 test("Response static constructors and getters", () => {
   const resp = new Response("hello world", { status: 200, headers: [["x-custom", "value"]] });
