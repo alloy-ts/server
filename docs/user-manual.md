@@ -95,12 +95,12 @@ app.stop();
 
 ---
 
-## 3. Rocket `Route`, `RouteUri`, and `Handler` Classes
+## 3. Rocket `Route`, `RouteUri`, `Catcher`, and `Handler` Classes
 
-Rocket routes requests based on collision precedence tables (ranks) and URIs. You can construct, inspect, and calculate ranks using the `Route`, `RouteUri`, and `Handler` classes:
+Rocket routes requests based on collision precedence tables (ranks), URIs, and catchers. You can construct and inspect them using `Route`, `RouteUri`, `Catcher`, and `Handler`:
 
 ```typescript
-import { Route, RouteUri, Handler } from "@alloy-ts/server";
+import { Route, RouteUri, Catcher, Handler } from "@alloy-ts/server";
 
 // 1. RouteUri inspection
 const uri = RouteUri.parse("/base", "/foo/<bar>?a=1");
@@ -109,22 +109,24 @@ console.log(uri.path); // "/base/foo/<bar>"
 console.log(uri.query); // "a=1"
 console.log(uri.asStr()); // "/base/foo/<bar>?a=1"
 
-// 2. Create a Handler wrapper around a JS callback
+// 2. Create status-specific or default Catcher
+const notFoundCatcher = Catcher.status(404);
+console.log(notFoundCatcher.code); // 404
+
+const defaultCatcher = Catcher.defaultCatcher();
+console.log(defaultCatcher.code); // null
+
+// 3. Create a Handler wrapper around a JS callback
 const handler = new Handler((req: any) => new Response("hello " + req.url));
 console.log(handler.isValid()); // true
 
-// 3. Create a route with default computed rank (-9 for "GET /")
+// 4. Create a route with default computed rank (-9 for "GET /")
 const index = new Route("GET", "/");
 console.log(index.rank); // -9
-
-// 4. Create a ranked route
-const custom = Route.ranked("POST", "/foo?bar", 1);
-console.log(custom.rank); // 1
 
 // 5. Calculate Rocket's default rank for a URI pattern
 console.log(Route.defaultRank("/?foo")); // -12 (static path, static query)
 console.log(Route.defaultRank("/a/<b>")); // -5 (partial path, no query)
-console.log(Route.defaultRank("/<b>/<c>")); // -1 (wild path, no query)
 ```
 
 ---
