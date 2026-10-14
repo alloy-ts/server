@@ -260,7 +260,7 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
 
 /// Align a Rocket route pattern's `<param>` segments with the actual request
 /// path segments to populate `req.params`.
-fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
+pub(crate) fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let p_segs: Vec<&str> = pattern
         .trim_start_matches('/')
         .split('/')
@@ -327,7 +327,7 @@ fn translate_pattern(pattern: &str) -> String {
 
 /// Build a Rocket `Response` from a JS handler's `Response`, mirroring the
 /// `Responder` step in Rocket's generated code.
-fn build_response(payload: &Response) -> RocketResponse<'static> {
+pub(crate) fn build_response(payload: &Response) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(payload.status as u16) {
         builder.status(status);

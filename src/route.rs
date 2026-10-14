@@ -72,3 +72,37 @@ impl Route {
     self.format.clone()
   }
 }
+
+pub(crate) fn compute_default_rank(uri: &str) -> i32 {
+  let (path_part, query_part) = match uri.split_once('?') {
+    Some((p, q)) => (p, Some(q)),
+    None => (uri, None),
+  };
+
+  let path_segs: Vec<&str> = path_part.split('/').filter(|s| !s.is_empty()).collect();
+  let static_path = path_segs.iter().all(|s| !s.starts_with(':') && !s.starts_with('<') && *s != "*");
+  let wild_path = !path_segs.is_empty() && path_segs.iter().all(|s| s.starts_with(':') || s.starts_with('<') || *s == "*");
+
+  let path_color: usize = match (static_path, wild_path) {
+    (true, _) => 3,
+    (_, true) => 1,
+    _ => 2,
+  };
+
+  let query_color: usize = match query_part {
+    None => 0,
+    Some(q) => {
+      let query_segs: Vec<&str> = q.split('&').filter(|s| !s.is_empty()).collect();
+      let static_q = query_segs.iter().all(|s| !s.starts_with('<'));
+      let wild_q = query_segs.iter().all(|s| s.starts_with('<'));
+      match (static_q, wild_q) {
+        (true, _) => 3,
+        (_, true) => 1,
+        _ => 2,
+      }
+    }
+  };
+
+  let raw_weight = (path_color << 2) | query_color;
+  -((raw_weight as i32) - 3)
+}
