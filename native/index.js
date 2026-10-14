@@ -904,7 +904,10 @@ if (!nativeBinding) {
 
 const {
   Config,
+  OutcomeHelper,
   Response,
+  Route,
+  RouteUri,
   Server,
   ADDRESS,
   buildRouteUri,
@@ -933,7 +936,10 @@ const {
   WORKERS,
 } = nativeBinding;
 export { Config };
+export { OutcomeHelper };
 export { Response };
+export { Route };
+export { RouteUri };
 export { Server };
 export { ADDRESS };
 export { buildRouteUri };
