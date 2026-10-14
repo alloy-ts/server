@@ -95,22 +95,33 @@ app.stop();
 
 ---
 
-## 3. Rocket `Route` Class & Default Rank Calculation
+## 3. Rocket `Route`, `RouteUri`, and `Handler` Classes
 
-Rocket routes requests based on collision precedence tables (ranks). You can construct, inspect, and calculate ranks using the `Route` class:
+Rocket routes requests based on collision precedence tables (ranks) and URIs. You can construct, inspect, and calculate ranks using the `Route`, `RouteUri`, and `Handler` classes:
 
 ```typescript
-import { Route } from "@alloy-ts/server";
+import { Route, RouteUri, Handler } from "@alloy-ts/server";
 
-// 1. Create a route with default computed rank (-9 for "GET /")
+// 1. RouteUri inspection
+const uri = RouteUri.parse("/base", "/foo/<bar>?a=1");
+console.log(uri.base); // "/base"
+console.log(uri.path); // "/base/foo/<bar>"
+console.log(uri.query); // "a=1"
+console.log(uri.asStr()); // "/base/foo/<bar>?a=1"
+
+// 2. Create a Handler wrapper around a JS callback
+const handler = new Handler((req: any) => new Response("hello " + req.url));
+console.log(handler.isValid()); // true
+
+// 3. Create a route with default computed rank (-9 for "GET /")
 const index = new Route("GET", "/");
 console.log(index.rank); // -9
 
-// 2. Create a ranked route
+// 4. Create a ranked route
 const custom = Route.ranked("POST", "/foo?bar", 1);
 console.log(custom.rank); // 1
 
-// 3. Calculate Rocket's default rank for a URI pattern
+// 5. Calculate Rocket's default rank for a URI pattern
 console.log(Route.defaultRank("/?foo")); // -12 (static path, static query)
 console.log(Route.defaultRank("/a/<b>")); // -5 (partial path, no query)
 console.log(Route.defaultRank("/<b>/<c>")); // -1 (wild path, no query)

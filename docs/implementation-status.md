@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The `@alloy-ts/server` native bindings provide a high-performance bridge between the **Rocket web framework** (Rust) and **TypeScript / Node.js**. The bindings enable full Rocket web server performance while presenting clean, familiar TypeScript APIs (including `Bun.serve` compatibility, Rocket's `Route` struct, and Rocket's `App` builder pattern).
+The `@alloy-ts/server` native bindings provide a high-performance bridge between the **Rocket web framework** (Rust) and **TypeScript / Node.js**. The bindings enable full Rocket web server performance while presenting clean, familiar TypeScript APIs (including `Bun.serve` compatibility, Rocket's `Route`, `RouteUri`, and `Handler` structs, and Rocket's `App` builder pattern).
 
 ---
 
@@ -13,6 +13,8 @@ The `@alloy-ts/server` native bindings provide a high-performance bridge between
 | **Server Engine**   | `Alloy.serve(options)` / `serve()`                         | `src/server.rs` (`server_serve_options`) | ✅ Complete |
 | **App Builder**     | `new App()`, `app.get()`, `app.post()`, etc.               | `src/server.rs` (`App`, `AppRoute`)      | ✅ Complete |
 | **Route Struct**    | `Route`, `Route.ranked()`, `Route.defaultRank()`           | `src/route.rs` (`Route`)                 | ✅ Complete |
+| **RouteUri Struct** | `RouteUri`, `RouteUri.parse()`                             | `src/route_uri.rs` (`RouteUri`)          | ✅ Complete |
+| **Handler Struct**  | `Handler`, `handler.isValid()`                             | `src/handler.rs` (`Handler`)             | ✅ Complete |
 | **Response Class**  | `new Response()`, `Response.json()`, `Response.redirect()` | `src/server.rs` (`ResponseClass`)        | ✅ Complete |
 | **File Serving**    | `Alloy.file(path)`                                         | `src/server.rs` (`AlloyFile`)            | ✅ Complete |
 | **Configuration**   | `Config`, `ConfigInit`                                     | `src/config.rs` (`Config`, `ConfigInit`) | ✅ Complete |
@@ -34,10 +36,12 @@ The `@alloy-ts/server` native bindings provide a high-performance bridge between
   - **Redirects & File Responses**: Native support for `Response.redirect()` and `Alloy.file()`.
   - **Fallback Handler**: Optional `fetch(req)` fallback for unmatched routes.
 
-### 2. Rocket `Route` Class & Default Ranking
+### 2. Rocket `Route`, `RouteUri`, & `Handler` Classes
 
 - NAPI wrapper around Rocket's `Route` struct exposing `method`, `uri`, `rank`, `format`, and `name`.
+- `RouteUri` struct exposing mount `base`, unmounted path, canonical `path`, and query string.
 - `Route.defaultRank(uri)` calculates default precedence ranks according to Rocket's 12-rank color matrix (-12 to -1).
+- `Handler` NAPI class wrapping JS callback functions.
 
 ### 3. Async Callback Interoperability
 
@@ -55,6 +59,6 @@ The `@alloy-ts/server` native bindings provide a high-performance bridge between
 ## Verification & Test Results
 
 - **Rust Unit Tests**: `cargo test` passes 8/8 tests.
-- **Vitest Suites**: `npm test` passes 19/19 tests across `src/server.test.ts`, `src/config.test.ts`, `src/route.test.ts`, and `src/codegen.test.ts`.
+- **Vitest Suites**: `npm test` passes 23/23 tests across `src/server.test.ts`, `src/config.test.ts`, `src/route.test.ts`, `src/route_uri.test.ts`, `src/handler.test.ts`, and `src/codegen.test.ts`.
 - **Linting & Formatting**: `npm run check` (`vp check`) and `npm run fmt` (`vp fmt`) pass with 0 warnings or errors.
 - **Example Execution**: All 8 TypeScript files in `examples/` verified runnable with `node --import @oxc-node/core`.
