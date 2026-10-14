@@ -23,9 +23,15 @@ pub struct Handler {
 impl Handler {
     /// Constructs a Handler from a JavaScript request callback function or unknown value.
     #[napi(constructor)]
-    pub fn new(env: Env, callback: Option<Unknown<'_>>) -> napi::Result<Self> {
+    pub fn new(
+        env: Env,
+        #[napi(ts_arg_type = "((req: any) => any) | null | undefined")] callback: Option<
+            Unknown<'_>,
+        >,
+    ) -> napi::Result<Self> {
         if let Some(cb) = callback {
-            let factory_unknown: Unknown = env.run_script("handler => async (req) => handler(req)")?;
+            let factory_unknown: Unknown =
+                env.run_script("handler => async (req) => handler(req)")?;
             let factory = to_js_function(factory_unknown);
             let handler_func = to_js_function(cb);
             let _async_handler_unknown = factory.call(None, &[handler_func])?;
@@ -36,7 +42,7 @@ impl Handler {
     }
 
     /// Helper to test if a Handler callback is valid and defined.
-    #[napi]
+    #[napi(js_name = "isValid")]
     pub fn is_valid(&self) -> bool {
         self.valid
     }
