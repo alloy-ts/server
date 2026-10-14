@@ -2,6 +2,7 @@ pub mod app;
 pub mod catcher;
 pub mod codegen;
 pub mod config;
+pub mod fairing;
 pub mod handler;
 pub mod route;
 pub mod route_uri;
