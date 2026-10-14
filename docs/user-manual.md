@@ -51,18 +51,32 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
-## 2. Rocket Route, Ranking & Outcomes (`Route`, `HandlerOutcome`)
+## 2. Rocket Route, RouteUri & Outcomes (`Route`, `RouteUri`, `HandlerOutcome`)
 
 ```ts
-import { Route, computeDefaultRank, createSuccessOutcome, response } from "@alloy-ts/server";
+import {
+  Route,
+  RouteUri,
+  computeDefaultRank,
+  createSuccessOutcome,
+  response,
+} from "@alloy-ts/server";
 
 // Compute default rank based on URI specificity
 const rank = computeDefaultRank("/foo/<id>?query"); // -8 (partial path, static query)
 
-// Create a route instance
+// Create a Route instance
 const route = new Route("GET", "/route/<path..>?query", "route_name", "json");
 console.log(route.rank); // -8
 console.log(route.method); // "GET"
+
+// RouteUri instance
+const routeUri = new RouteUri("/base", "/foo/<bar>?a=1");
+console.log(routeUri.base); // "/base"
+console.log(routeUri.unmountedOrigin); // "/foo/<bar>?a=1"
+console.log(routeUri.origin); // "/base/foo/<bar>?a=1"
+console.log(routeUri.path()); // "/base/foo/<bar>"
+console.log(routeUri.query()); // "a=1"
 
 // Custom handler outcome
 const outcome = createSuccessOutcome(response("Success"));
@@ -100,28 +114,13 @@ const customConfig = Config.tryFrom({
 
 ---
 
-## 4. Route Decorators & Codegen Utilities
+## 4. Codegen Utilities (`Codegen`)
 
 ```ts
-import { Get, Post, uri, routes, Codegen, responseJson } from "@alloy-ts/server";
-
-class UserController {
-  @Get("/users/<id>")
-  getUser() {
-    return responseJson({ id: 1, name: "Alice" });
-  }
-
-  @Post("/users")
-  createUser() {
-    return responseJson({ created: true });
-  }
-}
-
-const controller = new UserController();
-const activeRoutes = routes(controller.getUser, controller.createUser);
+import { buildUri, Codegen, responseJson } from "@alloy-ts/server";
 
 // Type-safe URI generation
-const userUrl = uri("/users/<id>?<rank>", { id: 42, rank: "admin" }, "/api");
+const userUrl = buildUri("/users/<id>?<rank>", { id: "42", rank: "admin" }, "/api");
 // Result: "/api/users/42?rank=admin"
 
 // Parse route attribute metadata

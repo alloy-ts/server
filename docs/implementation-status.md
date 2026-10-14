@@ -11,9 +11,10 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **Threadsafe Handler Execution:** JavaScript route handlers execute via `napi::threadsafe_function` (`ThreadsafeFunction`), supporting async JS handlers that resolve `Promise<Response>`.
 - **`Rocket` Lifecycle Class:** Exposes `new Rocket(config)`, `mount(base, method, path, handler)`, `register(base, code, handler)`, `launch()`, and `shutdown()`.
 
-### 2. Rocket Route Class, Ranking & Handler (`Route`, `computeDefaultRank`, `HandlerOutcome`)
+### 2. Rocket Route, RouteUri & Ranking (`Route`, `RouteUri`, `computeDefaultRank`, `HandlerOutcome`)
 
 - **`Route` NAPI Class:** Exposes `name`, `method`, `uri`, `rank`, and `format` properties, along with `new Route(method, uri, name?, format?)` and `Route.ranked(rank, method, uri, name?, format?)`.
+- **`RouteUri` NAPI Class:** Exposes `base`, `unmountedOrigin`, `origin`, `path()`, `query()`, and `asStr()`.
 - **Default Ranking Algorithm (`computeDefaultRank`):** Implements Rocket's exact default ranking matrix based on path/query specificity (static, partial, wild, none) ranging from `-12` to `-1`.
 - **Custom Handler Outcomes (`HandlerOutcome`):** Supports `createSuccessOutcome()`, `createErrorOutcome()`, and `createForwardOutcome()`.
 
@@ -27,11 +28,10 @@ This document provides a review and status summary of Rocket web framework NAPI 
 
 - **Route Attribute Parser (`parseRouteAttribute`):** Parses Rocket route syntax (`#[get("/<name>?<age>", rank = 1, format = "json", data = "<form>")]`) into `RouteMeta` with path and query parameters (`ParamMeta`).
 - **Catcher Attribute Parser (`parseCatchAttribute`):** Parses HTTP status codes (`404`, `500`) or `"default"`.
-- **Type-Safe URI Builder (`buildUri` / `uri()`):** Generates URL-safe, percent-encoded URIs given a pattern and parameter values.
+- **Type-Safe URI Builder (`buildUri`):** Generates URL-safe, percent-encoded URIs given a pattern and parameter values.
 - **TypeScript Code Generators:**
   - `generateTsRoutes(routes)`: Emits TypeScript route table code.
   - `generateFormSchema(fields)`: Emits `FromForm` validation functions.
-- **Decorators & Macros:** `@Get`, `@Post`, `@Put`, `@Delete`, `@RouteDecorator`, `@Catch`, `routes(...)`, and `catchers(...)`.
 
 ---
 
