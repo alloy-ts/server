@@ -19,13 +19,17 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **Default Ranking Algorithm (`computeDefaultRank`):** Implements Rocket's exact default ranking matrix based on path/query specificity (static, partial, wild, none) ranging from `-12` to `-1`.
 - **Custom Handler Outcomes (`HandlerOutcome`):** Supports `createSuccessOutcome()`, `createErrorOutcome()`, and `createForwardOutcome()`.
 
-### 3. Full Configuration System (`Config`)
+### 3. Rocket Fairings (`FairingInfo` & `FairingKind`)
+
+- **Fairing Info & Bitflags:** Exposes `createFairingInfo(name, kind)` with callback phase flags (`ignite`, `liftoff`, `request`, `response`, `shutdown`, `singleton`).
+
+### 4. Full Configuration System (`Config`)
 
 - **Rocket Parameters:** Exposes `address`, `port`, `workers`, `max_blocking`, `keep_alive`, `ident`, `ip_header`, `limits`, `temp_dir`, `log_level`, `cli_colors`, `shutdown`, `tls`, and `secret_key`.
 - **Factory Helpers:** `Config.debugDefault()`, `Config.releaseDefault()`, `Config.defaultConfig()`, `Config.figment()`, and `Config.tryFrom(init)`.
 - **Eager Validation:** Modifying getters/setters (`cfg.address = "127.0.0.1"`, `cfg.limits = ...`) eagerly validates inputs and surfaces clear NAPI errors on invalid IP addresses, log levels, or byte units.
 
-### 4. Code Generation Facilities (`Codegen`)
+### 5. Code Generation Facilities (`Codegen`)
 
 - **Route Attribute Parser (`parseRouteAttribute`):** Parses Rocket route syntax (`#[get("/<name>?<age>", rank = 1, format = "json", data = "<form>")]`) into `RouteMeta` with path and query parameters (`ParamMeta`).
 - **Catcher Attribute Parser (`parseCatchAttribute`):** Parses HTTP status codes (`404`, `500`) or `"default"`.
@@ -39,5 +43,5 @@ This document provides a review and status summary of Rocket web framework NAPI 
 ## Missing Features / Next Steps
 
 1. **Streaming & WebSockets:** WebSocket upgrade handlers (`server.upgrade()`) and Server-Sent Events (SSE) mid-stream timeout overrides (`server.timeout()`).
-2. **Fairings & Managed State:** NAPI bindings for Rocket Fairings (`AdHoc.on_request`, `AdHoc.on_response`) and managed state injection.
+2. **Managed State Injection:** NAPI bindings for managed state injection into request payloads.
 3. **Advanced Guards:** Automatic request guard parsing (e.g. `FromRequest` extraction for custom JS headers/cookies) beyond route parameters and body payloads.

@@ -51,7 +51,7 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
-## 2. Rocket Route, RouteUri, Catcher & Outcomes (`Route`, `RouteUri`, `Catcher`, `HandlerOutcome`)
+## 2. Rocket Route, RouteUri, Catcher & Fairings (`Route`, `RouteUri`, `Catcher`, `createFairingInfo`)
 
 ```ts
 import {
@@ -60,6 +60,7 @@ import {
   Catcher,
   computeDefaultRank,
   createSuccessOutcome,
+  createFairingInfo,
   response,
 } from "@alloy-ts/server";
 
@@ -80,6 +81,17 @@ console.log(routeUri.origin); // "/base/foo/<bar>?a=1"
 // Catcher instance
 const catcher = new Catcher(404, "not_found_catcher", "/api");
 console.log(catcher.code); // 404
+
+// Fairing metadata
+const fairingInfo = createFairingInfo("Request Timer", {
+  ignite: false,
+  liftoff: true,
+  request: true,
+  response: true,
+  shutdown: false,
+  singleton: false,
+});
+console.log(fairingInfo.name); // "Request Timer"
 
 // Custom handler outcome
 const outcome = createSuccessOutcome(response("Success"));
