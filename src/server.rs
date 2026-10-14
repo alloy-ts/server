@@ -538,15 +538,11 @@ fn parse_serve_args<'env>(
     Ok((routes, fetch, options))
 }
 
-/// NAPI implementation of `Alloy.serve({ routes, fetch, port, hostname, unix })` / `Bun.serve`.
-#[napi]
-pub fn serve(
-    options_or_routes: Option<Unknown<'_>>,
-    fetch_or_options: Option<Unknown<'_>>,
-    maybe_options: Option<ServeOptions>,
+fn serve_routes_raw(
+    routes: Vec<Route>,
+    fetch_val: Option<Unknown<'_>>,
+    options: ServeOptions,
 ) -> napi::Result<Server> {
-    let (routes_val, fetch_val, options) = parse_serve_args(options_or_routes, fetch_or_options, maybe_options)?;
-
     let hostname = options
         .hostname
         .clone()
@@ -584,19 +580,7 @@ pub fn serve(
     };
     let url = format!("http://{}:{}", display_host, port);
 
-    let mut out: Vec<Route> = Vec::new();
-    if let Some(table) = routes_val {
-        if table.get_type()? == ValueType::Object {
-            let table: Object = unsafe { table.cast()? };
-            let names = table.get_property_names()?;
-            let len = names.get_array_length_unchecked()?;
-            for i in 0..len {
-                let pattern: String = names.get_element(i)?;
-                let value: Unknown<'_> = table.get_named_property(&pattern)?;
-                mount_value(value, &pattern, ALL_METHODS, &mut out)?;
-            }
-        }
-    }
+    let mut out: Vec<Route> = routes;
 
     if let Some(fetch) = fetch_val {
         let f = to_js_function(fetch);
@@ -644,6 +628,38 @@ pub fn serve(
         port: port as u32,
         shutdown_slot: slot,
     })
+}
+
+fn serve_routes<'env>(
+    routes_val: Option<Unknown<'env>>,
+    fetch_val: Option<Unknown<'env>>,
+    options: ServeOptions,
+) -> napi::Result<Server> {
+    let mut out: Vec<Route> = Vec::new();
+    if let Some(table) = routes_val {
+        if table.get_type()? == ValueType::Object {
+            let table: Object = unsafe { table.cast()? };
+            let names = table.get_property_names()?;
+            let len = names.get_array_length_unchecked()?;
+            for i in 0..len {
+                let pattern: String = names.get_element(i)?;
+                let value: Unknown<'_> = table.get_named_property(&pattern)?;
+                mount_value(value, &pattern, ALL_METHODS, &mut out)?;
+            }
+        }
+    }
+    serve_routes_raw(out, fetch_val, options)
+}
+
+/// NAPI implementation of `Alloy.serve({ routes, fetch, port, hostname, unix })` / `Bun.serve`.
+#[napi]
+pub fn serve(
+    options_or_routes: Option<Unknown<'_>>,
+    fetch_or_options: Option<Unknown<'_>>,
+    maybe_options: Option<ServeOptions>,
+) -> napi::Result<Server> {
+    let (routes_val, fetch_val, options) = parse_serve_args(options_or_routes, fetch_or_options, maybe_options)?;
+    serve_routes(routes_val, fetch_val, options)
 }
 
 /// `Alloy` namespace exposing `Alloy.serve`, `Alloy.file`, `Alloy.response`, `Alloy.responseJson`, `Alloy.responseRedirect`.
@@ -700,6 +716,121 @@ impl Bun {
         maybe_options: Option<ServeOptions>,
     ) -> napi::Result<Server> {
         serve(options_or_routes, fetch_or_options, maybe_options)
+    }
+}
+
+/// The `App` class re-expresses Rocket's `#[get]`, `routes!`, and `#[launch]` macros
+/// at runtime in TypeScript / JavaScript.
+#[napi]
+pub struct App {
+    routes: Arc<Mutex<Vec<(Method, String, RouteKind)>>>,
+    server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        App {
+            routes: Arc::new(Mutex::new(Vec::new())),
+            server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    pub fn get(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Get, path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Post, path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Put, path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Delete, path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Patch, path, handler)
+    }
+
+    #[napi]
+    pub fn head(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Head, path, handler)
+    }
+
+    #[napi]
+    pub fn options(&self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.add_route(Method::Options, path, handler)
+    }
+
+    fn add_route(&self, method: Method, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        let kind = match handler.get_type()? {
+            ValueType::Function => {
+                let f = to_js_function(handler);
+                let tsfn: HandlerTsfn = f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+                    |ctx| Ok(ctx.value),
+                )?;
+                RouteKind::Fn(Arc::new(tsfn))
+            }
+            ValueType::String => {
+                let s: String = unsafe { handler.cast()? };
+                let mut headers = HashMap::new();
+                headers.insert("content-type".to_string(), "text/plain; charset=utf-8".to_string());
+                RouteKind::Static(Arc::new(Response {
+                    status: 200,
+                    headers,
+                    body: Some(s.into_bytes()),
+                }))
+            }
+            _ => {
+                return Err(napi::Error::new(Status::InvalidArg, "expected handler function or string"));
+            }
+        };
+        self.routes.lock().unwrap().push((method, path, kind));
+        Ok(())
+    }
+
+    #[napi]
+    pub fn launch(&self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let routes = self.routes.lock().unwrap();
+        let mut routes_out: Vec<Route> = Vec::new();
+
+        for (method, pattern, kind) in routes.iter() {
+            push_kind(kind.clone(), pattern, &[*method], &mut routes_out);
+        }
+
+        let options = options.unwrap_or_else(|| ServeOptions {
+            port: Some(3000),
+            hostname: Some("0.0.0.0".to_string()),
+            unix: None,
+        });
+
+        let srv = serve_routes_raw(routes_out, None, options)?;
+
+        *self.server.lock().unwrap() = Some(Server {
+            url: srv.url.clone(),
+            port: srv.port,
+            shutdown_slot: srv.shutdown_slot.clone(),
+        });
+
+        Ok(srv)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(srv) = self.server.lock().unwrap().take() {
+            srv.stop()?;
+        }
+        Ok(())
     }
 }
 

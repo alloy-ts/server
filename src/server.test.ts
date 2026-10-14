@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import {
   Alloy,
+  App,
   Bun,
   file,
   registerRoute,
@@ -10,10 +11,11 @@ import {
   responseRedirect,
 } from "../dist/index.js";
 
-test("server module exports serve, Alloy.serve, Bun.serve, registerRoute, file, response helpers", () => {
+test("server module exports serve, Alloy.serve, Bun.serve, App, registerRoute, file, response helpers", () => {
   expect(typeof serve).toBe("function");
   expect(typeof Alloy.serve).toBe("function");
   expect(typeof Bun.serve).toBe("function");
+  expect(typeof App).toBe("function");
   expect(typeof Alloy.file).toBe("function");
   expect(typeof Bun.file).toBe("function");
   expect(typeof registerRoute).toBe("function");
@@ -58,4 +60,14 @@ test("Alloy.serve starts a server and returns port/url", () => {
   expect(server.port).toBeGreaterThan(0);
   expect(server.url).toContain(`http://localhost:${server.port}`);
   server.stop();
+});
+
+test("App class registers routes and launches server", () => {
+  const app = new App();
+  app.get("/", async () => response("Hello, App!"));
+
+  const server = app.launch({ port: 0 });
+  expect(typeof server.port).toBe("number");
+  expect(server.url).toContain(`http://localhost:${server.port}`);
+  app.stop();
 });
