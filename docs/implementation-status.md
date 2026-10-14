@@ -32,7 +32,13 @@ This document outlines the current implementation status of Rocket NAPI bindings
    - Figment environment variable and `Rocket.toml` extraction (`Config.figment()`).
    - Getters & setters for `address`, `port`, `workers`, `maxBlocking`, `ident`, `ipHeader`, `limits`, `shutdown`, `logLevel`, `cliColors`.
 
-5. **TypeScript Code Generation (`codegen.rs`)**
+5. **Rocket Core Struct NAPI Bindings**
+   - `Route` (`src/route.rs`): Direct NAPI wrapper around `rocket::Route` (`new Route(method, uri, handler)`).
+   - `RouteUri` (`src/route_uri.rs`): Direct NAPI wrapper around `rocket::route::RouteUri` (`new RouteUri(base, path)`).
+   - `Handler` (`src/handler.rs`): NAPI wrapper around `rocket::route::Handler` supporting JS async route handlers (`new Handler(callback)`).
+   - `Catcher` (`src/catcher.rs`): NAPI wrapper around `rocket::catcher::Catcher` supporting JS error handler callbacks for HTTP status codes (`new Catcher(code, handler)`).
+
+6. **TypeScript Code Generation (`codegen.rs`)**
    - `parseRoute` / `parseRoutes` to parse Rocket & Bun style route patterns into structured parameter definitions.
    - `toRocketPath` path pattern translation.
    - `generateTypes`, `generateClient`, `generateModule` emitting strongly-typed TypeScript SDKs and route map interfaces.
@@ -44,13 +50,15 @@ This document outlines the current implementation status of Rocket NAPI bindings
 To achieve 100% feature parity with Rocket's Rust features across NAPI, the following features are planned for future iterations:
 
 ### Phase 1: Custom Catchers & Middleware / Fairings
-- **NAPI Custom Catcher Registration**: Expose `app.registerCatcher(code, handler)` and `Alloy.serve({ catchers: { 404: ..., 500: ... } })` to let TypeScript handle custom Rocket catchers.
+
 - **TypeScript Middleware / Fairings**: Expose `app.attach(fairing)` with `onRequest`, `onResponse`, and `onShutdown` hooks in JS.
 
 ### Phase 2: Cookies & Managed State
+
 - **Encrypted Cookie Jar API**: Expose `req.cookies.get(name)` and `req.cookies.setPrivate(name, value)` bridging Rocket's CookieJar.
 - **Managed Application State**: NAPI binding to attach and extract state objects across requests (`app.manage(state)`).
 
 ### Phase 3: Streaming & WebSockets
+
 - **Streaming Response & Request Bodies**: Support `ReadableStream` / async iterators for streaming large files or responses.
 - **WebSocket Upgrade Handling**: Native HTTP upgrade handling for WebSocket connections (`req.upgrade()`).

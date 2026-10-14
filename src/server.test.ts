@@ -9,7 +9,7 @@ import {
   responseRedirect,
   file,
   registerRoute,
-  RequestInput,
+  type RequestInput,
 } from "../dist/index.js";
 
 // Helper for HTTP requests
@@ -60,8 +60,7 @@ test("Alloy.serve boots Bun.serve compatible server with object options", async 
       hostname: "127.0.0.1",
       routes: {
         "/api/status": response("OK"),
-        "/users/:id": async (req: RequestInput) =>
-          response(`Hello User ${req.params.id}!`),
+        "/users/:id": async (req: RequestInput) => response(`Hello User ${req.params["id"]}!`),
         "/api/posts": {
           GET: async () => response("List posts"),
           POST: async (req: RequestInput) => {
@@ -142,7 +141,7 @@ test("Alloy.serve boots Bun.serve compatible server with object options", async 
 });
 
 test("Environment variable port fallback works", async () => {
-  process.env.PORT = "3888";
+  process.env["PORT"] = "3888";
   try {
     const server = serve({
       routes: {
@@ -161,7 +160,7 @@ test("Environment variable port fallback works", async () => {
 
     server.stop();
   } finally {
-    delete process.env.PORT;
+    delete process.env["PORT"];
   }
 });
 
