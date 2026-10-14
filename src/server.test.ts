@@ -1,5 +1,12 @@
 import { expect, test } from "vite-plus/test";
-import { serve, file, Response, registerRoute, parseRoutePattern, buildRouteUri } from "./main.ts";
+import {
+  serve,
+  file,
+  Response,
+  registerRoute,
+  parseRoutePattern,
+  buildRouteUri,
+} from "../index.js";
 
 test("server.ts - Response constructor and static helpers", () => {
   const resp = new Response("ok", { status: 200, headers: [["Content-Type", "text/plain"]] });

@@ -425,7 +425,7 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
 
     let rocket = rocket::build().configure(config).mount("/", routes);
 
-    spawn(async move {
+    rocket::tokio::spawn(async move {
         if let Ok(ignited) = rocket.ignite().await {
             let shutdown = ignited.shutdown();
             *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);

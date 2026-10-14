@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Config } from "./main.ts";
+import { Config } from "../index.js";
 
 test("config.ts - Config constructors and default profiles", () => {
   const debug = Config.debugDefault();

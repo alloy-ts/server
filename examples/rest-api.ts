@@ -1,4 +1,4 @@
-import Alloy, { Response } from "../src/main.ts";
+import Alloy, { Response } from "../index.js";
 
 interface Post {
   id: string;

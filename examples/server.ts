@@ -1,4 +1,4 @@
-import Alloy, { Response } from "../src/main.ts";
+import Alloy, { Response } from "../index.js";
 
 const server = Alloy.serve({
   port: 3000,

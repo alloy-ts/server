@@ -1,4 +1,4 @@
-import { Config, serve, Response } from "../src/main.ts";
+import { Config, serve, Response } from "../index.js";
 
 console.log("Supported Config parameters:");
 console.log(Config.parameters());

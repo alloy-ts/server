@@ -27,7 +27,7 @@
  *   `#[launch] … .mount(..)` -> `app.launch()`
  */
 
-import { App, response } from "../src/main.ts";
+import { App, response } from "../index.js";
 
 // #[get("/")]
 // fn hello() -> &'static str {

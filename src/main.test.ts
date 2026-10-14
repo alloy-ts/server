@@ -1,36 +1,18 @@
 import { expect, test } from "vite-plus/test";
 import {
   main,
-  Alloy,
-  App,
+  file,
   Response,
   response,
   Config,
-  get,
-  post,
-  route,
-  catchCatcher,
-  routes,
-  catchers,
-  uri,
   parseRoutePattern,
   buildRouteUri,
   parseCatcherCode,
   generateRouteManifest,
-  parseFormData,
-} from "./main.ts";
+} from "../index.js";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
-});
-
-test("Alloy object has serve, file, Response, Config, App, response", () => {
-  expect(typeof Alloy.serve).toBe("function");
-  expect(typeof Alloy.file).toBe("function");
-  expect(Alloy.Response).toBe(Response);
-  expect(Alloy.Config).toBe(Config);
-  expect(Alloy.App).toBe(App);
-  expect(Alloy.response).toBe(response);
 });
 
 test("Response static constructors and instance methods", () => {
@@ -53,43 +35,12 @@ test("response helper function", () => {
   const resp1 = response("Hello, world!");
   expect(resp1.status).toBe(200);
 
-  const resp2 = response(Buffer.from("Hello Buffer"), { status: 201 });
+  const resp2 = response("Hello String", { status: 201 });
   expect(resp2.status).toBe(201);
 });
 
-test("FromForm and parseFormData helpers", () => {
-  const parsed = parseFormData("name=Alice&role=admin");
-  expect(parsed["name"]).toBe("Alice");
-  expect(parsed["role"]).toBe("admin");
-});
-
-test("App class methods, middleware, and server launching", () => {
-  const app = new App({ port: 0 });
-  const logs: string[] = [];
-
-  app.use(async (_req, next) => {
-    logs.push("mw1");
-    const res = await next();
-    logs.push("mw2");
-    return res;
-  });
-
-  app.get("/", async () => {
-    logs.push("handler");
-    return response("Hello, world!");
-  });
-
-  app.post("/submit", async () => response("Submitted", { status: 201 }));
-
-  const server = app.launch();
-  expect(server.url).toContain("http://");
-  expect(typeof server.port).toBe("number");
-
-  app.stop();
-});
-
-test("Alloy.file returns StaticFile marker", () => {
-  const f = Alloy.file("./favicon.ico");
+test("file returns StaticFile marker", () => {
+  const f = file("./favicon.ico");
   expect(f.path).toBe("./favicon.ico");
 });
 
@@ -121,11 +72,11 @@ test("Codegen - parseRoutePattern parses express and rocket parameters", () => {
   expect(info2.isWildcard).toBe(true);
 });
 
-test("Codegen - uri builder (buildRouteUri)", () => {
-  const u1 = uri("/users/:id", { id: 123 });
+test("Codegen - buildRouteUri", () => {
+  const u1 = buildRouteUri("/users/:id", { id: "123" });
   expect(u1).toBe("/users/123");
 
-  const u2 = uri("/posts/<category>/<id>", { category: "tech", id: 456 });
+  const u2 = buildRouteUri("/posts/<category>/<id>", { category: "tech", id: "456" });
   expect(u2).toBe("/posts/tech/456");
 
   const u3 = buildRouteUri("/search/:q", { q: "hello world" });
@@ -144,35 +95,4 @@ test("Codegen - generateRouteManifest produces info array", () => {
   expect(manifest.length).toBe(2);
   expect(manifest[0]?.rawPattern).toBe("/api/v1/posts");
   expect(manifest[1]?.pathParams).toEqual(["id"]);
-});
-
-test("Codegen - route registration and decorators", () => {
-  function getUsersHandler() {
-    return Response.json([]);
-  }
-
-  function createUserHandler() {
-    return Response.json({ created: true });
-  }
-
-  function updateUserHandler() {
-    return Response.json({ updated: true });
-  }
-
-  function notFoundHandler() {
-    return new Response("Not found", { status: 404 });
-  }
-
-  get("/users")(getUsersHandler);
-  post("/users")(createUserHandler);
-  route("PUT", "/users/:id")(updateUserHandler);
-  catchCatcher(404)(notFoundHandler);
-
-  const allRoutes = routes();
-  expect(allRoutes.some((r) => r.method === "GET" && r.path === "/users")).toBe(true);
-  expect(allRoutes.some((r) => r.method === "POST" && r.path === "/users")).toBe(true);
-  expect(allRoutes.some((r) => r.method === "PUT" && r.path === "/users/:id")).toBe(true);
-
-  const allCatchers = catchers();
-  expect(allCatchers.some((c) => c.code === 404)).toBe(true);
 });

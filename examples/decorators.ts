@@ -1,4 +1,4 @@
-import { get, post, route, catchCatcher, routes, catchers, launch, Response } from "../src/main.ts";
+import { get, post, route, catchCatcher, routes, catchers, launch, Response } from "../index.js";
 
 class UserController {
   @get("/users")

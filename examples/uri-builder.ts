@@ -1,4 +1,4 @@
-import { uri, parseRoutePattern, generateRouteManifest } from "../src/main.ts";
+import { uri, parseRoutePattern, generateRouteManifest } from "../index.js";
 
 console.log("Parsing route pattern /users/:id/posts/:postId:");
 const patternInfo = parseRoutePattern("/users/:id/posts/:postId");
