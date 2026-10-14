@@ -228,7 +228,7 @@ impl Handler for JsHandler {
 
 /// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
 /// including any `:param` / `<param>` path segments.
-async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
+pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
     let path = uri.path().to_string();
@@ -327,7 +327,7 @@ fn translate_pattern(pattern: &str) -> String {
 
 /// Build a Rocket `Response` from a JS handler's `Response`, mirroring the
 /// `Responder` step in Rocket's generated code.
-fn build_response(payload: &Response) -> RocketResponse<'static> {
+pub(crate) fn build_response(payload: &Response) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(payload.status as u16) {
         builder.status(status);
