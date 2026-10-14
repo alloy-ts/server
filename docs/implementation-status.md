@@ -89,3 +89,16 @@ All examples can be executed directly using:
 ```bash
 node --import @oxc-node/core/register examples/<script>.ts
 ```
+
+---
+
+## 5. What's Missing & Next Steps Roadmap
+
+While Rocket's core HTTP server, route mounting, configuration, and codegen are fully working in TypeScript, future extensions could further expand Rocket's advanced features:
+
+1. **Request Fairings & Middleware Bridge**:
+   - Expose Rocket's `Fairing` lifecycle hooks (`on_request`, `on_response`, `on_shutdown`) so JS/TS middleware functions can inspect or attach headers across all incoming requests and responses.
+2. **Streaming Requests & Form/Multipart Guards**:
+   - Add high-level JS helpers for handling streaming request bodies (`ReadableStream`) or parsing `multipart/form-data` uploads directly into structured objects.
+3. **WebSockets / HTTP Upgrade Bridge**:
+   - Bridge Rocket 0.5's connection upgrade / WebSocket handlers into JS callbacks for real-time bidirectional communication.
