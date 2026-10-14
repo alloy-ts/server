@@ -1,7 +1,7 @@
 //! NAPI bindings for Rocket's [`RouteUri`] (`rocket::route::RouteUri`).
 //!
 //! Provides a JS-friendly mirror of Rocket's `RouteUri` struct, exposing
-//! `base`, `unmountedOrigin`, `origin`, `path`, `query`, and `asStr`.
+//! `base`, `unmountedOrigin`, `origin`, `path()`, `query()`, and `asStr()`.
 
 use napi::bindgen_prelude::Error as NapiError;
 use napi::Status;
@@ -18,8 +18,11 @@ fn err<E: std::fmt::Display>(e: E) -> NapiError {
 /// NAPI mirror of Rocket's [`RouteUri`].
 #[napi]
 pub struct RouteUri {
+    /// The path of the base mount point.
     pub base: String,
+    /// The URI without the base mount point.
     pub unmounted_origin: String,
+    /// The canonical route URI with the base mount point.
     pub origin: String,
 }
 
@@ -46,12 +49,6 @@ impl RouteUri {
             unmounted_origin: route_uri.unmounted_origin.to_string(),
             origin: route_uri.origin.to_string(),
         })
-    }
-
-    /// The path of the base mount point.
-    #[napi]
-    pub fn base(&self) -> String {
-        self.base.clone()
     }
 
     /// The path part of this route URI.
