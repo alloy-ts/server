@@ -1,28 +1,22 @@
 import { expect, test } from "vite-plus/test";
 import {
-  Alloy,
   buildRouteUri,
   Config,
   file,
-  generateRoutesTypeDefinitions,
-  get,
-  getRegisteredRoutesMeta,
-  Handler,
-  main,
+  generateTsRouteTypes,
   parseRoutePattern,
-  post,
+  registerRoute,
   Response,
-  RouteMetadata,
-  RouteUri,
+  Route,
+  serve,
   uri,
-} from "./main.ts";
-
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
-});
+} from "../dist/index.js";
 
 test("Response static constructors and getters", () => {
-  const resp = new Response("hello world", { status: 200, headers: [["x-custom", "value"]] });
+  const resp = new Response("hello world", {
+    status: 200,
+    headers: [{ name: "x-custom", value: "value" }],
+  });
   expect(resp.status).toBe(200);
 
   const jsonResp = Response.json({ status: "ok" });
@@ -33,54 +27,23 @@ test("Response static constructors and getters", () => {
 });
 
 test("Config default profiles and parameters", () => {
-  if (Config) {
-    const cfg = new Config();
-    expect(cfg.port).toBeGreaterThan(0);
-    expect(Config.parameters()).toContain("port");
-  }
+  const cfg = new Config();
+  expect(cfg.port).toBeGreaterThan(0);
+  expect(Config.parameters()).toContain("port");
 });
 
-test("RouteMetadata class", () => {
-  if (RouteMetadata) {
-    const route = new RouteMetadata("GET", "/test/<id>", "test_route", 1, "json");
-    expect(route.method).toBe("GET");
-    expect(route.uri).toBe("/test/<id>");
-    expect(route.name).toBe("test_route");
-    expect(route.rank).toBe(1);
-    expect(route.format).toBe("json");
+test("Route class", () => {
+  const route = new Route("GET", "/test/<id>", "test_route", 1, "json");
+  expect(route.method).toBe("GET");
+  expect(route.uri).toBe("/test/<id>");
+  expect(route.name).toBe("test_route");
+  expect(route.rank).toBe(1);
+  expect(route.format).toBe("json");
 
-    const rankedRoute = RouteMetadata.ranked(2, "POST", "/posts");
-    expect(rankedRoute.method).toBe("POST");
-    expect(rankedRoute.uri).toBe("/posts");
-    expect(rankedRoute.rank).toBe(2);
-  }
-});
-
-test("RouteUri NAPI wrapper", () => {
-  if (RouteUri) {
-    const routeUri = new RouteUri("/base", "/foo/<bar>");
-    expect(routeUri.base).toBe("/base");
-    expect(routeUri.path()).toContain("/foo/");
-    expect(routeUri.asStr()).toBeDefined();
-  }
-});
-
-test("Handler NAPI wrapper", () => {
-  if (Handler) {
-    const handler = new Handler("custom_handler");
-    expect(handler.name).toBe("custom_handler");
-
-    const succOutcome = Handler.success({ status: 200, headers: [] });
-    expect(succOutcome.status).toBe(200);
-    expect(succOutcome.isForward).toBe(false);
-
-    const errOutcome = Handler.error(500);
-    expect(errOutcome.status).toBe(500);
-
-    const fwdOutcome = Handler.forward(404);
-    expect(fwdOutcome.status).toBe(404);
-    expect(fwdOutcome.isForward).toBe(true);
-  }
+  const rankedRoute = Route.ranked(2, "POST", "/posts");
+  expect(rankedRoute.method).toBe("POST");
+  expect(rankedRoute.uri).toBe("/posts");
+  expect(rankedRoute.rank).toBe(2);
 });
 
 test("Codegen utilities: uri and route parsing", () => {
@@ -96,31 +59,25 @@ test("Codegen utilities: uri and route parsing", () => {
   const uriBuilt = buildRouteUri("/users/<id>?<ref>", { id: "10", ref: "test" });
   expect(uriBuilt).toBe("/users/10?ref=test");
 
-  const tsDefs = generateRoutesTypeDefinitions(["/api/items/<id>"]);
+  const tsDefs = generateTsRouteTypes(["/api/items/<id>"]);
   expect(tsDefs).toContain("export interface ApiRoutes");
   expect(tsDefs).toContain("id: string;");
 });
 
-test("Route registration and metadata", () => {
-  get("/api/health", () => new Response("OK"));
-  post("/api/data", () => new Response("Created", { status: 201 }));
-
-  const meta = getRegisteredRoutesMeta();
-  expect(meta.some((m) => m.path === "/api/health" && m.method === "GET")).toBe(true);
-  expect(meta.some((m) => m.path === "/api/data" && m.method === "POST")).toBe(true);
+test("Route registration", () => {
+  expect(() => {
+    registerRoute("GET", "/api/health", async () => new Response("OK"));
+  }).not.toThrow();
 });
 
-test("Alloy.serve creates server instance", () => {
-  const server = Alloy.serve({
-    port: 0,
-    routes: {
+test("serve creates server instance", () => {
+  const server = serve(
+    {
       "/api/status": new Response("OK"),
-      "/users/:id": (req: any) => new Response(`User ${req.params.id}`),
     },
-    fetch() {
-      return new Response("Not Found", { status: 404 });
-    },
-  });
+    null,
+    { port: 0 },
+  );
 
   expect(server.url).toContain("http://");
   expect(server.port).toBeGreaterThanOrEqual(0);

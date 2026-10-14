@@ -1,9 +1,4 @@
-import {
-  buildRouteUri,
-  generateRoutesTypeDefinitions,
-  parseRoutePattern,
-  uri,
-} from "../src/main.ts";
+import { buildRouteUri, generateTsRouteTypes, parseRoutePattern, uri } from "../dist/index.js";
 
 console.log("=== 1. Type-Safe URI Generation ===");
 const userUri = uri("/users/:id", { id: "42" });
@@ -32,5 +27,5 @@ const routesToGenerate = [
   "/api/v1/files/*",
 ];
 
-const tsTypes = generateRoutesTypeDefinitions(routesToGenerate);
+const tsTypes = generateTsRouteTypes(routesToGenerate);
 console.log(tsTypes);

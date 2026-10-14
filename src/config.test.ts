@@ -1,8 +1,7 @@
 import { expect, test } from "vite-plus/test";
-import { Config } from "./main.ts";
+import { Config } from "../dist/index.js";
 
 test("Config constructor and debug_default", () => {
-  if (!Config) return;
   const cfg = new Config();
   expect(cfg.port).toBeGreaterThan(0);
   expect(cfg.address).toBeDefined();
@@ -13,7 +12,6 @@ test("Config constructor and debug_default", () => {
 });
 
 test("Config release_default and default_config", () => {
-  if (!Config) return;
   const relCfg = Config.release_default();
   expect(relCfg.profile).toBe("release");
 
@@ -22,7 +20,6 @@ test("Config release_default and default_config", () => {
 });
 
 test("Config parameters list", () => {
-  if (!Config) return;
   const params = Config.parameters();
   expect(params).toContain("address");
   expect(params).toContain("port");
@@ -33,7 +30,6 @@ test("Config parameters list", () => {
 });
 
 test("Config getters and setters", () => {
-  if (!Config) return;
   const cfg = new Config();
   cfg.port = 9090;
   expect(cfg.port).toBe(9090);
@@ -41,15 +37,14 @@ test("Config getters and setters", () => {
   cfg.workers = 8;
   expect(cfg.workers).toBe(8);
 
-  cfg.keep_alive = 10;
-  expect(cfg.keep_alive).toBe(10);
+  cfg.keepAlive = 10;
+  expect(cfg.keepAlive).toBe(10);
 
-  cfg.cli_colors = false;
-  expect(cfg.cli_colors).toBe(false);
+  cfg.cliColors = false;
+  expect(cfg.cliColors).toBe(false);
 });
 
 test("Config try_from and from", () => {
-  if (!Config) return;
   const cfg = Config.try_from({
     port: 8080,
     address: "127.0.0.1",

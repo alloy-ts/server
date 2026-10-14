@@ -1,6 +1,6 @@
-import { Alloy, file, Response } from "../src/main.ts";
+import { file, Response, serve } from "../dist/index.js";
 
-const server = Alloy.serve({
+const server = serve({
   routes: {
     // Static routes
     "/api/status": new Response("OK"),
@@ -25,7 +25,7 @@ const server = Alloy.serve({
     // Redirect from /blog/hello to /blog/hello/world
     "/blog/hello": Response.redirect("/blog/hello/world"),
 
-    // Serve a file by lazily loading it from disk
+    // Serve a file by lazily loading it into memory
     "/favicon.ico": file("./favicon.ico"),
   },
 
