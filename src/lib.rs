@@ -105,9 +105,18 @@
 //! [testing guide]: https://rocket.rs/v0.5/guide/testing/#testing
 //! [Figment]: https://docs.rs/figment
 
-pub mod codegen;
-pub mod config;
-pub mod handler;
-pub mod route;
-pub mod route_uri;
-pub mod server;
+mod catcher;
+mod codegen;
+mod config;
+mod handler;
+mod route;
+mod route_uri;
+mod server;
+
+pub use catcher::*;
+pub use codegen::*;
+pub use config::*;
+pub use handler::*;
+pub use route::*;
+pub use route_uri::*;
+pub use server::*;

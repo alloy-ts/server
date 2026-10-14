@@ -1,6 +1,6 @@
 # `@alloy-ts/server` User Manual
 
-The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NAPI bindings for the **Rocket** web framework, along with Bun/Alloy-compatible APIs, full server configuration controls, route management, and route code generation utilities.
+The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NAPI bindings for the **Rocket** web framework, along with Bun/Alloy-compatible APIs, full server configuration controls, route & catcher management, and route code generation utilities.
 
 ---
 
@@ -16,7 +16,7 @@ The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NA
    - [Request Helper Methods (`req.json()`, `req.text()`, `req.params`)](#request-helper-methods)
    - [Response Helpers (`Response`, `Response.json()`, `Response.redirect()`)](#response-helpers)
    - [Static File Serving (`Bun.file` / `file`)](#static-file-serving)
-4. [Route Management & URIs (`Route`, `RouteUri`, `HandlerOutcome`)](#route-management--uris-route-routeuri-handleroutcome)
+4. [Route & Catcher Management (`Route`, `RouteUri`, `Catcher`, `HandlerOutcome`)](#route--catcher-management-route-routeuri-catcher-handleroutcome)
 5. [Low-Level Rocket Lifecycle (`Rocket`)](#low-level-rocket-lifecycle-rocket)
 6. [TypeScript Code Generation (`codegen`)](#typescript-code-generation-codegen)
    - [Route Pattern Translation](#route-pattern-translation)
@@ -180,14 +180,15 @@ Alloy.serve({
 
 ---
 
-## Route Management & URIs (`Route`, `RouteUri`, `HandlerOutcome`)
+## Route & Catcher Management (`Route`, `RouteUri`, `Catcher`, `HandlerOutcome`)
 
-Inspect, construct, and rank routes using NAPI bindings for `Route` and `RouteUri`:
+Inspect, construct, and rank routes and catchers using NAPI bindings for `Route`, `RouteUri`, and `Catcher`:
 
 ```ts
 import {
   Route,
   RouteUri,
+  Catcher,
   handlerSuccess,
   handlerError,
   handlerForward,
@@ -204,9 +205,11 @@ console.log(routeUri.base); // "/"
 console.log(routeUri.path); // "/foo/bar"
 console.log(routeUri.query); // "a=1"
 
-// Map URI base prefix
-routeUri.mapBase("/v1");
-console.log(routeUri.path); // "/v1/foo/bar"
+// Construct an Error Catcher
+const notFoundCatcher = new Catcher(404, "not_found");
+console.log(notFoundCatcher.code); // 404
+notFoundCatcher.mapBase("/api");
+console.log(notFoundCatcher.base); // "/api"
 
 // Custom Handler outcomes
 const ok = handlerSuccess(response("Hello"));
