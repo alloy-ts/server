@@ -75,6 +75,16 @@ export declare class Config {
   set cliColors(value: boolean)
 }
 
+/** NAPI wrapper for Rocket fairing configuration. */
+export declare class Fairing {
+  constructor(name: string, kind: number)
+  /** Creates an ad-hoc fairing with a given name and callback kind mask. */
+  static adHoc(name: string, kind?: number | undefined | null): Fairing
+  get name(): string
+  get kind(): number
+  info(): FairingInfo
+}
+
 export declare class Response {
   get status(): number
   get headers(): Record<string, string>
@@ -142,6 +152,12 @@ export declare const DEBUG_PROFILE: string
 
 export declare const DEFAULT_PROFILE: string
 
+/** NAPI mirror of Rocket's `fairing::Info`. */
+export interface FairingInfo {
+  name: string
+  kind: number
+}
+
 export declare function file(path: string): StaticFile
 
 export declare const IDENT: string
@@ -149,6 +165,19 @@ export declare const IDENT: string
 export declare const IP_HEADER: string
 
 export declare const KEEP_ALIVE: string
+
+/** Bitset flags representing callback kinds for a Fairing. */
+export declare const KIND_IGNITE: number
+
+export declare const KIND_LIFTOFF: number
+
+export declare const KIND_REQUEST: number
+
+export declare const KIND_RESPONSE: number
+
+export declare const KIND_SHUTDOWN: number
+
+export declare const KIND_SINGLETON: number
 
 export declare function launch(): Promise<void>
 

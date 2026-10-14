@@ -716,9 +716,10 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { Catcher, Config, Response, Route, RouteUri, Server, ADDRESS, CLI_COLORS, DEBUG_PROFILE, DEFAULT_PROFILE, file, IDENT, IP_HEADER, KEEP_ALIVE, launch, LIMITS, LOG_LEVEL, MAX_BLOCKING, PORT, registerRoute, RELEASE_PROFILE, SECRET_KEY, serve, SHUTDOWN, TEMP_DIR, TLS, uri, WORKERS } = nativeBinding
+const { Catcher, Config, Fairing, Response, Route, RouteUri, Server, ADDRESS, CLI_COLORS, DEBUG_PROFILE, DEFAULT_PROFILE, file, IDENT, IP_HEADER, KEEP_ALIVE, KIND_IGNITE, KIND_LIFTOFF, KIND_REQUEST, KIND_RESPONSE, KIND_SHUTDOWN, KIND_SINGLETON, launch, LIMITS, LOG_LEVEL, MAX_BLOCKING, PORT, registerRoute, RELEASE_PROFILE, SECRET_KEY, serve, SHUTDOWN, TEMP_DIR, TLS, uri, WORKERS } = nativeBinding
 export { Catcher }
 export { Config }
+export { Fairing }
 export { Response }
 export { Route }
 export { RouteUri }
@@ -731,6 +732,12 @@ export { file }
 export { IDENT }
 export { IP_HEADER }
 export { KEEP_ALIVE }
+export { KIND_IGNITE }
+export { KIND_LIFTOFF }
+export { KIND_REQUEST }
+export { KIND_RESPONSE }
+export { KIND_SHUTDOWN }
+export { KIND_SINGLETON }
 export { launch }
 export { LIMITS }
 export { LOG_LEVEL }
