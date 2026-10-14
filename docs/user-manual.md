@@ -109,6 +109,18 @@ import {
   createHandlerOutcomeForward,
 } from "@alloy-ts/server";
 
+import { RouteUri } from "@alloy-ts/server";
+
+// Construct and inspect RouteUri instances
+const uri = new RouteUri("/", "/foo/bar?a=1");
+console.log(uri.base); // "/"
+console.log(uri.path); // "/foo/bar"
+console.log(uri.query); // "a=1"
+
+// Remap mount base
+const remappedUri = uri.mapBase("/boo");
+console.log(remappedUri.path); // "/boo/foo/bar"
+
 // Create custom handler wrapper
 const customHandler = new Handler("CustomKindHandler", async (req) => {
   if (req.uri === "/special") {

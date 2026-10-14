@@ -78,22 +78,12 @@ type HandlerTsfn = ThreadsafeFunction<
     0,
 >;
 
-/// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
-/// a JS object) into a `napi::JsFunction` so we can call
-/// `create_threadsafe_function`.
-///
-/// `JsFunction` does not implement `FromNapiValue`, so `Unknown::cast` cannot
-/// produce it. The two types share the identical `NapiValueInner` layout (an
-/// env pointer + a value pointer), so a bit-copy is sound: the napi handles are
-/// cloned into the resulting `ThreadsafeFunction`, so dropping the source
-/// `Unknown` is safe.
-#[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(Status::InvalidArg, "expected a function"));
+    }
+    #[allow(deprecated)]
+    unsafe { Ok(std::mem::transmute_copy::<Unknown, JsFunction>(&handler)) }
 }
 
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
@@ -282,11 +272,12 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
-            // `<_..>` catch-all -> skip; `<name>` or `<name..>` -> capture.
-            let name = inner
-                .strip_suffix("..>")
-                .or_else(|| inner.strip_suffix('>'));
-            if let Some(name) = name {
+            if let Some(name) = inner.strip_suffix("..>") {
+                if name != "_" && idx < a_segs.len() {
+                    let rest = a_segs[idx..].join("/");
+                    params.insert(name.to_string(), rest);
+                }
+            } else if let Some(name) = inner.strip_suffix('>') {
                 if name != "_" {
                     if let Some(v) = a_segs.get(idx) {
                         params.insert(name.to_string(), (*v).to_string());
@@ -376,7 +367,7 @@ fn mount_value<'env>(
 ) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
+            let f = to_js_function(value)?;
             let tsfn: HandlerTsfn = f
                 .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
                     |ctx| Ok(ctx.value),
@@ -521,7 +512,7 @@ pub fn serve(
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = fetch_val {
-        let f = to_js_function(fetch);
+        let f = to_js_function(fetch)?;
         let tsfn: HandlerTsfn = f
             .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
                 |ctx| Ok(ctx.value),
@@ -616,7 +607,7 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 /// [`serve`] is called, which mounts them alongside the `routes` table.
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
-    let f = to_js_function(handler);
+    let f = to_js_function(handler)?;
     let tsfn: HandlerTsfn = f
         .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
             |ctx| Ok(ctx.value),

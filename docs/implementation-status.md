@@ -52,14 +52,15 @@ This document provides a technical status review and architectural breakdown of 
 
 ## Module Status Matrix
 
-| Module             | Native Source    | JS Export                                                                                                       | Status       | Test Suite                       |
-| ------------------ | ---------------- | --------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------- |
-| **Server Engine**  | `src/server.rs`  | `Alloy.serve`, `serve`, `Server`, `file`, `response`, `responseJson`, `responseRedirect`, `registerRoute`       | **Complete** | `src/server.test.ts` (9 tests)   |
-| **Config Engine**  | `src/config.rs`  | `Config`, `ConfigInit`, `Limits`, `Shutdown`, parameter constants                                               | **Complete** | `src/config.test.ts` (5 tests)   |
-| **Codegen Engine** | `src/codegen.rs` | `httpMethods`, `parseRoute`, `parseRoutes`, `toRocketPath`, `generateTypes`, `generateClient`, `generateModule` | **Complete** | `src/codegen.test.ts` (11 tests) |
-| **Route Engine**   | `src/route.rs`   | `Route` class (`new`, `ranked`, `mapBase`, getters/setters)                                                     | **Complete** | `src/route.test.ts` (4 tests)    |
-| **Handler Engine** | `src/handler.rs` | `Handler`, `HandlerOutcomeKind`, `createHandlerOutcomeSuccess`, `createHandlerOutcomeError`, etc.               | **Complete** | `src/handler.test.ts` (4 tests)  |
-| **App Builder**    | `src/main.ts`    | `App` class (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `route`, `launch`, `stop`)             | **Complete** | `src/server.test.ts`             |
+| Module              | Native Source      | JS Export                                                                                                         | Status       | Test Suite                        |
+| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------ | --------------------------------- |
+| **Server Engine**   | `src/server.rs`    | `Alloy.serve`, `serve`, `Server`, `file`, `response`, `responseJson`, `responseRedirect`, `registerRoute`         | **Complete** | `src/server.test.ts` (9 tests)    |
+| **Config Engine**   | `src/config.rs`    | `Config`, `ConfigInit`, `Limits`, `Shutdown`, parameter constants                                                 | **Complete** | `src/config.test.ts` (5 tests)    |
+| **Codegen Engine**  | `src/codegen.rs`   | `httpMethods`, `parseRoute`, `parseRoutes`, `toRocketPath`, `generateTypes`, `generateClient`, `generateModule`   | **Complete** | `src/codegen.test.ts` (11 tests)  |
+| **Route Engine**    | `src/route.rs`     | `Route` class (`new`, `ranked`, `mapBase`, getters/setters)                                                       | **Complete** | `src/route.test.ts` (4 tests)     |
+| **RouteUri Engine** | `src/route_uri.rs` | `RouteUri` class (`new`, `base`, `unmountedOrigin`, `origin`, `path`, `query`, `asStr`, `defaultRank`, `mapBase`) | **Complete** | `src/route_uri.test.ts` (3 tests) |
+| **Handler Engine**  | `src/handler.rs`   | `Handler`, `HandlerOutcomeKind`, `createHandlerOutcomeSuccess`, `createHandlerOutcomeError`, etc.                 | **Complete** | `src/handler.test.ts` (4 tests)   |
+| **App Builder**     | `src/main.ts`      | `App` class (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `route`, `launch`, `stop`)               | **Complete** | `src/server.test.ts`              |
 
 ---
 
@@ -78,6 +79,6 @@ This document provides a technical status review and architectural breakdown of 
 ## Test & Verification Summary
 
 - **Rust Unit Tests (`cargo test`)**: 8/8 tests passing.
-- **TypeScript Unit Tests (`vp test`)**: 33/33 tests passing across `src/codegen.test.ts`, `src/config.test.ts`, `src/handler.test.ts`, `src/route.test.ts`, and `src/server.test.ts`.
+- **TypeScript Unit Tests (`vp test`)**: 36/36 tests passing across `src/codegen.test.ts`, `src/config.test.ts`, `src/handler.test.ts`, `src/route.test.ts`, `src/route_uri.test.ts`, and `src/server.test.ts`.
 - **Type Checking & Formatting (`vp check`)**: 0 warnings, 0 lint errors, 0 type errors across all files.
 - **OxNode Execution**: Tested and verified with `@oxc-node/core` and Node experimental type stripping.

@@ -29,13 +29,12 @@ type HandlerTsfn = ThreadsafeFunction<
     0,
 >;
 
-#[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(Status::InvalidArg, "expected a function"));
+    }
+    #[allow(deprecated)]
+    unsafe { Ok(std::mem::transmute_copy::<Unknown, JsFunction>(&handler)) }
 }
 
 #[derive(Clone)]
@@ -91,7 +90,7 @@ impl Route {
         let m: Method = method.parse().map_err(|_| {
             napi::Error::new(Status::InvalidArg, format!("invalid HTTP method: {method}"))
         })?;
-        let f = to_js_function(handler);
+        let f = to_js_function(handler)?;
         let tsfn: HandlerTsfn = f
             .create_threadsafe_function::<RequestInput, RequestInput, Either<Response, Promise<Response>>, Status, _, false, false, 0>(
                 |ctx| Ok(ctx.value),

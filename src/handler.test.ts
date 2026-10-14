@@ -7,13 +7,24 @@ import {
 } from "../dist/index.js";
 
 describe("Handler NAPI class & outcome constructors", () => {
-  test("Handler constructor creates Handler instance with name", () => {
-    const handler = new Handler("CustomHandler", (_req) => {
-      return { status: 200, headers: [], body: Buffer.from("hello") };
+  test("Handler constructor creates Handler instance with name and executes handle", async () => {
+    const handler = new Handler("CustomHandler", async (req) => {
+      return createHandlerOutcomeSuccess(200, `Hello from ${req.uri}`, [["X-Test", "1"]]);
     });
 
     expect(handler).toBeDefined();
     expect(handler.name).toBe("CustomHandler");
+
+    const result = await handler.handle({
+      method: "GET",
+      uri: "/test",
+      headers: [],
+    });
+
+    expect(result.kind).toBe(0);
+    expect(result.status).toBe(200);
+    expect(result.response?.body).toBeDefined();
+    expect(Buffer.from(result.response!.body!).toString("utf-8")).toBe("Hello from /test");
   });
 
   test("createHandlerOutcomeSuccess constructs Success outcome", () => {

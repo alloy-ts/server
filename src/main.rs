@@ -90,10 +90,12 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
-            let name = inner
-                .strip_suffix("..>")
-                .or_else(|| inner.strip_suffix('>'));
-            if let Some(name) = name {
+            if let Some(name) = inner.strip_suffix("..>") {
+                if name != "_" && idx < a_segs.len() {
+                    let rest = a_segs[idx..].join("/");
+                    params.insert(name.to_string(), rest);
+                }
+            } else if let Some(name) = inner.strip_suffix('>') {
                 if name != "_" {
                     if let Some(v) = a_segs.get(idx) {
                         params.insert(name.to_string(), (*v).to_string());
@@ -179,21 +181,12 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
 type HandlerTsfn =
     ThreadsafeFunction<(RequestPayload,), Either<ResponsePayload, Promise<ResponsePayload>>>;
 
-/// Bridge a JS `Unknown` into a `JsFunction`.
-///
-/// In napi 3.14, the `#[napi]`-accepted `Function`/`Unknown` types and the
-/// `JsFunction` type share the identical `NapiValueInner` representation
-/// (an env pointer + a value pointer), but only `JsFunction` exposes
-/// `create_threadsafe_function` with a typed return value. This copy is sound
-/// because the layout is identical; the underlying `napi` handles are cloned
-/// into the new `ThreadsafeFunction`, so dropping the original `Unknown` is safe.
-#[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(Status::InvalidArg, "expected a function"));
+    }
+    #[allow(deprecated)]
+    unsafe { Ok(std::mem::transmute_copy::<Unknown, JsFunction>(&handler)) }
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +331,7 @@ impl Rocket {
         let method: Method = method
             .parse()
             .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let tsfn: HandlerTsfn = to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
@@ -356,7 +349,7 @@ impl Rocket {
     #[allow(deprecated)]
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
         let code: Option<u16> = code.map(|c| c as u16);
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let tsfn: HandlerTsfn = to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();

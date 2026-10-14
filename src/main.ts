@@ -76,6 +76,7 @@ export const Alloy = {
   Config: native.Config,
   Rocket: native.Rocket,
   Route: native.Route,
+  RouteUri: native.RouteUri,
   Handler: native.Handler,
   createHandlerOutcomeSuccess: native.createHandlerOutcomeSuccess,
   createHandlerOutcomeError: native.createHandlerOutcomeError,
