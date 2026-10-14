@@ -29,7 +29,7 @@ use crate::server::{build_request, build_response, RouteKind};
 /// - `Success`: The request was successfully handled, returning a response.
 /// - `Error`: The request resulted in an HTTP error status (invoking Rocket's error catchers).
 /// - `Forward`: The request should be forwarded to the next matching route.
-#[napi(string_enum)]
+#[napi]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum OutcomeKind {
     Success,

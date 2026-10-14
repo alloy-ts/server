@@ -18,7 +18,7 @@ import {
   TEMP_DIR,
   TLS,
   WORKERS,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("Config default constructor and profile", () => {
   const config = new Config();

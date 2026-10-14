@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
 import {
+  App,
   Config,
   Rocket,
   file,
@@ -8,7 +9,7 @@ import {
   responseRedirect,
   serve,
   uri,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("Response constructors and helpers", () => {
   const resp = response("Hello World", { status: 200 });
@@ -55,4 +56,12 @@ test("Server instantiation via Rocket and serve", () => {
   );
   expect(server.port).toBe(8080);
   server.stop();
+});
+
+test("App builder pattern", () => {
+  const app = new App({ port: 8082 });
+  app.get("/hello", () => response("Hello from App"));
+  const server = app.launch();
+  expect(server.port).toBe(8082);
+  app.stop();
 });

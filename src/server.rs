@@ -469,6 +469,7 @@ pub fn serve(
 }
 
 /// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
+#[derive(Clone)]
 #[napi(object)]
 pub struct ServeOptions {
     pub port: Option<u32>,

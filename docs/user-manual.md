@@ -6,6 +6,18 @@ Welcome to `@alloy-ts/server` — TypeScript and Node.js NAPI bindings for the [
 
 `@alloy-ts/server` allows Node.js and TypeScript developers to run a high-performance Rocket HTTP web server backed by Rust's multi-threaded Tokio runtime.
 
+## Architecture & NAPI Modules
+
+`@alloy-ts/server` maps Rocket's core Rust constructs to TypeScript:
+
+| Rocket Construct                   | TypeScript / NAPI Export                                 | Description                                                         |
+| ---------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `rocket::build().mount().launch()` | `serve()`, `App`, `Rocket`                               | Launch a Rocket HTTP server backed by Tokio                         |
+| `Config` & Figment                 | `Config`, `ConfigInit`                                   | Full profile, limits, shutdown, and TLS server configuration        |
+| `uri!` macro                       | `uri()`                                                  | Type-safe and URL-safe parameter interpolation & query encoding     |
+| `Handler` trait                    | `JsHandler`, `HandlerOutcome`, `OutcomeKind`             | Bridge JS callbacks & custom handlers into Rocket's `Handler` trait |
+| `Route` struct                     | `RouteInfo`, `computeDefaultRank()`, `createRouteInfo()` | Inspect route metadata, ranks, methods, and media formats           |
+
 ## Quickstart
 
 ### 1. Installation
@@ -72,7 +84,7 @@ app.launch();
 Rocket uses Figment for flexible profile-based configuration.
 
 ```ts
-import { Config, Rocket } from "@alloy-ts/server";
+import { Config } from "@alloy-ts/server";
 
 // Seeded with debug defaults
 const config = new Config();
@@ -104,6 +116,21 @@ const searchUri = uri(
 ); // "/search/books?q=rocket%20web%20framework&page=1"
 ```
 
+## Route Ranks and Metadata (`RouteInfo`)
+
+Rocket computes default precedence ranks for routes (e.g., static paths have higher precedence than wildcards):
+
+```ts
+import { computeDefaultRank, createRouteInfo } from "@alloy-ts/server";
+
+const rank1 = computeDefaultRank("/foo/bar"); // -9 (static path, no query)
+const rank2 = computeDefaultRank("/foo/<id>"); // -5 (partial path, no query)
+const rank3 = computeDefaultRank("/<..>"); // -1 (wildcard path, no query)
+
+const info = createRouteInfo("GET", "/users/<id>", "get_user", undefined, "json");
+console.log(info.rank); // -5
+```
+
 ## Examples
 
 Run any included example using Node.js and `@oxc-node/core`:
@@ -113,4 +140,5 @@ node --import @oxc-node/core/register.mjs examples/server.ts
 node --import @oxc-node/core/register.mjs examples/app-routes.ts
 node --import @oxc-node/core/register.mjs examples/config.ts
 node --import @oxc-node/core/register.mjs examples/uri-builder.ts
+node --import @oxc-node/core/register.mjs examples/file-server.ts
 ```

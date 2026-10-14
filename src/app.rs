@@ -33,11 +33,13 @@ use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::catcher::{self, Catcher};
+use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
 use rocket::http::{Method, Status as RocketStatus};
 use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
 use rocket::tokio::io::AsyncReadExt;
 use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
-use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
+
+use crate::server::{register_route, serve, ServeOptions, Server};
 
 /// Convert any displayable Rocket error into an NAPI error.
 fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
@@ -412,4 +414,65 @@ pub async fn launch(config: Option<RocketConfig>) -> Result<()> {
 #[napi]
 pub async fn rocket_main(config: Option<RocketConfig>) -> Result<()> {
     Rocket::new(config)?.launch().await
+}
+
+/// High-level Rocket application builder exposed directly via NAPI.
+#[napi]
+pub struct App {
+    options: Option<ServeOptions>,
+    server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new(options: Option<ServeOptions>) -> Self {
+        Self {
+            options,
+            server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    pub fn get(&self, path: String, handler: Unknown<'_>) -> Result<()> {
+        register_route("GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn post(&self, path: String, handler: Unknown<'_>) -> Result<()> {
+        register_route("POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn put(&self, path: String, handler: Unknown<'_>) -> Result<()> {
+        register_route("PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&self, path: String, handler: Unknown<'_>) -> Result<()> {
+        register_route("DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&self, path: String, handler: Unknown<'_>) -> Result<()> {
+        register_route("PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn launch(&self) -> Result<Server> {
+        let server = serve(None, None, self.options.clone())?;
+        *self.server.lock().unwrap() = Some(Server {
+            url: server.url.clone(),
+            port: server.port,
+        });
+        Ok(server)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> Result<()> {
+        if let Some(srv) = self.server.lock().unwrap().as_ref() {
+            srv.stop()?;
+        }
+        Ok(())
+    }
 }
