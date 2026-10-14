@@ -42,3 +42,21 @@ impl OutcomeHelper {
         }
     }
 }
+
+/// NAPI structure describing a custom Rocket route handler metadata.
+#[napi]
+pub struct CustomHandlerInfo {
+    pub name: String,
+    pub route_count: u32,
+}
+
+#[napi]
+impl CustomHandlerInfo {
+    #[napi(constructor)]
+    pub fn new(name: String, route_count: Option<u32>) -> Self {
+        CustomHandlerInfo {
+            name,
+            route_count: route_count.unwrap_or(1),
+        }
+    }
+}
