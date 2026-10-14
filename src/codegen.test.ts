@@ -3,9 +3,9 @@ import {
   parseRouteAttribute,
   parseCatcherAttribute,
   buildUri,
+  uri,
   generateTsRouteManifest,
-  Alloy,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("parseRouteAttribute formats route metadata correctly", () => {
   const meta = parseRouteAttribute("get", "/users/:id", "get_user", 1, "json");
@@ -26,15 +26,15 @@ test("parseCatcherAttribute parses status code or default catcher", () => {
   expect(defaultCatcher.name).toBe("default_handler");
 });
 
-test("buildUri and Alloy.uri perform parameter interpolation and URL encoding", () => {
+test("buildUri and uri perform parameter interpolation and URL encoding", () => {
   const uri1 = buildUri("/users/<id>/posts/<post_id>", {
     id: "10",
     post_id: "hello world & rust",
   });
   expect(uri1).toBe("/users/10/posts/hello%20world%20%26%20rust");
 
-  const uri2 = Alloy.uri("/users/:id/posts/:post_id", {
-    id: 42,
+  const uri2 = uri("/users/:id/posts/:post_id", {
+    id: "42",
     post_id: "foo/bar",
   });
   expect(uri2).toBe("/users/42/posts/foo%2Fbar");

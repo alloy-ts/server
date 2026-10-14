@@ -9,25 +9,6 @@
 //!   except the handler bodies live in JavaScript.
 //! * `uri!` type-checked construction -> the TS-side `uri()` builder (see the
 //!   codegen layer); this module only carries the request/response wire types.
-//!
-//! Each registered JS handler is wrapped in a [`rocket::route::Handler`] whose
-//! `handle` calls the JS function through a [`napi::threadsafe_function`] (so it
-//! can run on any Rocket worker thread) and builds a [`rocket::Response`] from
-//! the JS return value, mirroring Rocket's generated-handler semantics.
-//!
-//! The public surface below (`serve`, `Response`, `file`, `response`,
-//! `responseJson`, `responseRedirect`, `register_route`, `Server`) is the single
-//! source of truth: `npm run build` generates `index.js` / `index.d.ts` from
-//! these `#[napi]` exports, so no hand-written `.ts` shim (e.g. a former
-//! `src/serve.ts`) is needed.
-//!
-//! Note on `Response`: it is a `#[napi(object)]` (plain data) rather than a
-//! `#[napi]` class because napi class fields must support `&mut` serialization,
-//! which complex types (`HashMap`, nested objects) do not. The constructor /
-//! static helpers (`response`, `responseJson`, `responseRedirect`) are exposed as
-//! free `#[napi]` functions that return this object, keeping the Bun-style
-//! `Response.json(data)` / `Response.redirect(url)` ergonomics available to the
-//! TS glue layer.
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -49,39 +30,22 @@ use rocket::response::Response as RocketResponse;
 use rocket::route::{Handler, Outcome as RouteOutcome, Route};
 use rocket::{Data, Shutdown};
 
-/// Convenience alias for the threadsafe function each JS route handler is
-/// wrapped in. The JS function receives a [`RequestInput`] and must resolve a
-/// [`Promise<Response>`] (i.e. be `async` and return a `Response`).
-///
-/// The `create_threadsafe_function` generic order is
-/// `<T, NewArgs, Return, ErrorStatus, F, ES, Weak, MaxQueueSize>`; the closure
-/// returns `NewArgs` (a 1-tuple of the request), while `Return` is the JS
-/// function's resolved value (`Promise<Response>`, whose `FromNapiValue` awaits
-/// the JS promise for us).
 type HandlerTsfn =
     ThreadsafeFunction<RequestInput, Promise<Response>, (RequestInput,), Status, true, false, 0>;
 
-/// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
-/// a JS object) into a `napi::JsFunction` so we can call
-/// `create_threadsafe_function`.
-///
-/// `JsFunction` does not implement `FromNapiValue`, so `Unknown::cast` cannot
-/// produce it. The two types share the identical `NapiValueInner` layout (an
-/// env pointer + a value pointer), so a bit-copy is sound: the napi handles are
-/// cloned into the resulting `ThreadsafeFunction`, so dropping the source
-/// `Unknown` is safe.
 #[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(
+            Status::InvalidArg,
+            "Expected a JS function handler",
+        ));
+    }
+    let f: JsFunction = unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) };
+    Ok(f)
 }
 
-/// Wire type sent from Rust -> JS for every request, mirroring the request data
-/// Rocket's generated route handler would have extracted before calling the user
-/// fn. `params` carries any `:name` / `<name>` path segments.
+/// Wire type sent from Rust -> JS for every request.
 #[napi(object)]
 pub struct RequestInput {
     pub method: String,
@@ -99,10 +63,7 @@ pub struct ResponseInit {
     pub headers: Option<HashMap<String, String>>,
 }
 
-/// The `Response` value a JS handler returns. It is a plain `#[napi(object)]`
-/// (see the module docs for why it is not a class) carrying the same `status` /
-/// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
-/// produce.
+/// The `Response` value a JS handler returns.
 #[napi(object)]
 pub struct Response {
     pub status: u32,
@@ -192,8 +153,6 @@ impl Handler for JsHandler {
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
                 let input = build_request(request, data, &pattern).await;
-                // `call_async` resolves to `Promise<Response>`; awaiting that
-                // promise yields the JS `Response` (or a JS error -> 500).
                 let output = match tsfn.call_async(Ok(input)).await {
                     Ok(promise) => match promise.await {
                         Ok(payload) => payload,
@@ -216,8 +175,6 @@ impl Handler for JsHandler {
     }
 }
 
-/// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
-/// including any `:param` / `<param>` path segments.
 async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
@@ -229,8 +186,6 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
         .map(|h| (h.name.as_str().to_string(), h.value().to_string()))
         .collect();
 
-    // Read up to 1 MiB of body. Larger bodies are truncated for the MVP; raise
-    // the `ByteUnit` limit (or stream) when needed.
     let body = match data.open(ByteUnit::Megabyte(1)).into_bytes().await {
         Ok(capped) => Some(capped.value),
         Err(_) => None,
@@ -248,8 +203,6 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
     }
 }
 
-/// Align a Rocket route pattern's `<param>` segments with the actual request
-/// path segments to populate `req.params`.
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let p_segs: Vec<&str> = pattern
         .trim_start_matches('/')
@@ -264,7 +217,6 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for (idx, seg) in p_segs.iter().enumerate() {
         if let Some(inner) = seg.strip_prefix('<') {
-            // `<_..>` catch-all -> skip; `<name>` or `<name..>` -> capture.
             let name = inner
                 .strip_suffix("..>")
                 .or_else(|| inner.strip_suffix('>'));
@@ -280,8 +232,6 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
     params
 }
 
-/// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
-/// (`<name>`, `<_..>`).
 fn translate_pattern(pattern: &str) -> String {
     let mut out = String::with_capacity(pattern.len());
     let mut chars = pattern.chars().peekable();
@@ -302,8 +252,6 @@ fn translate_pattern(pattern: &str) -> String {
                 out.push_str(&format!("<{name}>"));
             }
         } else if c == '*' {
-            // Multi-segment glob: Alloy's `*` matches "all routes that start
-            // with <prefix>" (e.g. `/api/*` covers `/api/foo/bar`).
             out.push_str("<_..>");
         } else {
             out.push(c);
@@ -312,8 +260,6 @@ fn translate_pattern(pattern: &str) -> String {
     out
 }
 
-/// Build a Rocket `Response` from a JS handler's `Response`, mirroring the
-/// `Responder` step in Rocket's generated code.
 fn build_response(payload: &Response) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(payload.status as u16) {
@@ -329,7 +275,6 @@ fn build_response(payload: &Response) -> RocketResponse<'static> {
     builder.finalize()
 }
 
-/// Methods expanded when a route value is a bare function / static / file.
 const ALL_METHODS: &[Method] = &[
     Method::Get,
     Method::Post,
@@ -340,12 +285,6 @@ const ALL_METHODS: &[Method] = &[
     Method::Options,
 ];
 
-/// Inspect one route value and append Rocket routes for it.
-///
-/// `value` is whatever the user put at `routes[pattern]` (or at a per-method
-/// slot): a JS function, a `Response`/`file()` result, or a `{ METHOD: ... }`
-/// map. The order of the typed casts matters: `StaticFile` (has `path`) before
-/// `Response` (has `status`) before treating it as a method map.
 #[allow(deprecated)]
 fn mount_value<'env>(
     value: Unknown<'env>,
@@ -355,7 +294,7 @@ fn mount_value<'env>(
 ) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
+            let f = to_js_function(value)?;
             let tsfn: HandlerTsfn =
                 f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
                     |ctx| Ok((ctx.value,)),
@@ -375,19 +314,16 @@ fn mount_value<'env>(
                 );
             } else if let Ok(resp) = unsafe { v.clone().cast::<Response>() } {
                 push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
-            } else {
-                // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
-                        .parse()
-                        .map_err(|_| {
-                            napi::Error::new(
-                                Status::GenericFailure,
-                                format!("invalid method: {method}"),
-                            )
-                        })?;
-                    mount_value(method_value, pattern, &[m], out)?;
+            } else if let Ok(obj) = unsafe { v.cast::<Object>() } {
+                let names = obj.get_property_names()?;
+                let len = names.get_array_length_unchecked()?;
+                for i in 0..len {
+                    let method: String = names.get_element(i)?;
+                    let m_upper = method.to_ascii_uppercase();
+                    if let Ok(m) = m_upper.parse::<Method>() {
+                        let method_value: Unknown<'_> = obj.get_named_property(&method)?;
+                        mount_value(method_value, pattern, &[m], out)?;
+                    }
                 }
             }
         }
@@ -396,8 +332,6 @@ fn mount_value<'env>(
     Ok(())
 }
 
-/// Append one [`RouteKind`] for every method in `methods`, translating the
-/// Alloy/Bun pattern into Rocket syntax.
 fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<Route>) {
     let handler = JsHandler(Arc::new(kind));
     let rocket_pattern = translate_pattern(pattern);
@@ -406,32 +340,58 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-/// Shared shutdown handle, filled by the launch fairing and drained by
-/// [`Server::stop`].
 type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
 static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
-/// NAPI equivalent of `Alloy.serve({ routes, fetch, port, hostname })` + the
-/// launch step. Parses the JS `routes` table, builds a `Rocket<Build>` from every
-/// route, spawns it on the tokio runtime, and returns a [`Server`] handle
-/// immediately (mirroring Bun's synchronous `serve` return).
-///
-/// `routes` and `fetch` are taken as direct parameters (a JS object / function
-/// cannot be a `#[napi(object)]` struct field); `options` carries the scalar
-/// config (`port`, `hostname`, `unix`).
 #[napi]
 pub fn serve(
-    routes: Option<Unknown<'_>>,
+    routes_or_options: Option<Unknown<'_>>,
     fetch: Option<Unknown<'_>>,
     options: Option<ServeOptions>,
 ) -> napi::Result<Server> {
-    let options = options.unwrap_or_else(|| ServeOptions {
+    let mut real_routes: Option<Unknown<'_>> = None;
+    let mut real_fetch: Option<Unknown<'_>> = fetch;
+    let mut opts = options.unwrap_or_else(|| ServeOptions {
         port: None,
         hostname: None,
         unix: None,
     });
-    let mut port = options.port.unwrap_or(3000) as u16;
-    let hostname = options
+
+    if let Some(arg) = routes_or_options {
+        if arg.get_type()? == ValueType::Object {
+            let obj: Object = unsafe { arg.cast()? };
+            let has_routes = obj.has_named_property("routes")?;
+            let has_fetch = obj.has_named_property("fetch")?;
+            let has_port = obj.has_named_property("port")?;
+            let has_hostname = obj.has_named_property("hostname")?;
+
+            if has_routes || has_fetch || has_port || has_hostname {
+                if has_routes {
+                    real_routes = Some(obj.get_named_property("routes")?);
+                }
+                if has_fetch {
+                    real_fetch = Some(obj.get_named_property("fetch")?);
+                }
+                if has_port {
+                    if let Ok(p) = obj.get_named_property::<u32>("port") {
+                        opts.port = Some(p);
+                    }
+                }
+                if has_hostname {
+                    if let Ok(h) = obj.get_named_property::<String>("hostname") {
+                        opts.hostname = Some(h);
+                    }
+                }
+            } else {
+                real_routes = Some(arg);
+            }
+        } else {
+            real_routes = Some(arg);
+        }
+    }
+
+    let mut port = opts.port.unwrap_or(3000) as u16;
+    let hostname = opts
         .hostname
         .clone()
         .unwrap_or_else(|| "0.0.0.0".to_string());
@@ -453,7 +413,7 @@ pub fn serve(
     let url = format!("http://{}:{}", hostname, port);
 
     let mut out: Vec<Route> = Vec::new();
-    if let Some(table) = routes {
+    if let Some(table) = real_routes {
         let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
@@ -464,9 +424,8 @@ pub fn serve(
         }
     }
 
-    // `fetch` fallback: a catch-all for every method on any unmatched path.
-    if let Some(fetch) = fetch {
-        let f = to_js_function(fetch);
+    if let Some(fetch_fn) = real_fetch {
+        let f = to_js_function(fetch_fn)?;
         let tsfn: HandlerTsfn =
             f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
                 |ctx| Ok((ctx.value,)),
@@ -492,11 +451,7 @@ pub fn serve(
                 *slot.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
-    // Run the server on its own dedicated tokio runtime in a background thread.
-    // `serve` is invoked synchronously from the Node event loop (no surrounding
-    // tokio context), so we cannot use `rocket::tokio::spawn` here — that would
-    // panic with "no reactor running". A standalone runtime guarantees Rocket has
-    // the executor it needs while keeping the JS call non-blocking.
+
     std::thread::spawn(move || {
         if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -514,7 +469,8 @@ pub fn serve(
     })
 }
 
-/// Options for [`serve`] (scalar config only; `routes`/`fetch` are parameters).
+/// Options for [`serve`].
+#[derive(Clone)]
 #[napi(object)]
 pub struct ServeOptions {
     pub port: Option<u32>,
@@ -522,7 +478,7 @@ pub struct ServeOptions {
     pub unix: Option<String>,
 }
 
-/// Handle returned by [`serve`]; exposes `url`, `port`, and `stop()`.
+/// Handle returned by [`serve`].
 #[napi]
 pub struct Server {
     pub url: String,
@@ -531,7 +487,6 @@ pub struct Server {
 
 #[napi]
 impl Server {
-    /// Gracefully stop the server (waits for in-flight requests).
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
         if let Some(slot) = SHUTDOWN.get() {
@@ -543,10 +498,131 @@ impl Server {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Low-level registry API: `register_route` for the codegen/decorator path that
-// builds routes one-at-a-time before booting.
-// ---------------------------------------------------------------------------
+/// Fluent router matching Rocket's `rocket::build()` and `#[get]` attributes.
+#[napi]
+pub struct App {
+    routes: HashMap<String, HashMap<String, Arc<RouteKind>>>,
+    options: ServeOptions,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new(options: Option<ServeOptions>) -> Self {
+        Self {
+            routes: HashMap::new(),
+            options: options.unwrap_or_else(|| ServeOptions {
+                port: None,
+                hostname: None,
+                unix: None,
+            }),
+        }
+    }
+
+    #[napi]
+    pub fn get(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.register_method(path, "GET", handler)
+    }
+
+    #[napi]
+    pub fn post(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.register_method(path, "POST", handler)
+    }
+
+    #[napi]
+    pub fn put(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.register_method(path, "PUT", handler)
+    }
+
+    #[napi]
+    pub fn delete(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.register_method(path, "DELETE", handler)
+    }
+
+    #[napi]
+    pub fn patch(&mut self, path: String, handler: Unknown<'_>) -> napi::Result<()> {
+        self.register_method(path, "PATCH", handler)
+    }
+
+    fn register_method(&mut self, path: String, method: &str, handler: Unknown<'_>) -> napi::Result<()> {
+        let f = to_js_function(handler)?;
+        let tsfn: HandlerTsfn =
+            f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
+                |ctx| Ok((ctx.value,)),
+            )?;
+        let kind = Arc::new(RouteKind::Fn(Arc::new(tsfn)));
+        let entry = self.routes.entry(path).or_default();
+        entry.insert(method.to_string(), kind);
+        Ok(())
+    }
+
+    #[napi]
+    pub fn launch(&mut self) -> napi::Result<Server> {
+        let mut out: Vec<Route> = Vec::new();
+        for (pattern, method_map) in &self.routes {
+            for (method_str, kind) in method_map {
+                if let Ok(m) = method_str.parse::<Method>() {
+                    push_kind((**kind).clone(), pattern, &[m], &mut out);
+                }
+            }
+        }
+
+        let mut port = self.options.port.unwrap_or(3000) as u16;
+        let hostname = self
+            .options
+            .hostname
+            .clone()
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let address: IpAddr = match hostname.as_str() {
+            "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            other => other
+                .parse()
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+
+        if port == 0 {
+            if let Ok(listener) = std::net::TcpListener::bind((address, 0)) {
+                if let Ok(addr) = listener.local_addr() {
+                    port = addr.port();
+                }
+            }
+        }
+
+        let url = format!("http://{}:{}", hostname, port);
+
+        let mut config = Config::default();
+        config.port = port;
+        config.address = address;
+
+        let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+        SHUTDOWN.get_or_init(|| slot.clone());
+
+        let rocket = rocket::build()
+            .configure(config)
+            .mount("/", out)
+            .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+                Box::pin(async move {
+                    *slot.lock().unwrap() = Some(orbit.shutdown());
+                })
+            }));
+
+        std::thread::spawn(move || {
+            if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(async move {
+                    let _ = rocket.launch().await;
+                });
+            }
+        });
+
+        Ok(Server {
+            url,
+            port: port as u32,
+        })
+    }
+}
 
 static ROUTES: OnceLock<Mutex<Vec<Route>>> = OnceLock::new();
 
@@ -554,14 +630,9 @@ fn routes() -> &'static Mutex<Vec<Route>> {
     ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// NAPI equivalent of `#[get("/p")] fn ..` + adding it to a `routes!` list.
-///
-/// The `handler` JS function must return a `Promise<Response>` (i.e. be an
-/// `async` function returning a `Response`). Route definitions accumulate until
-/// [`serve`] is called, which mounts them alongside the `routes` table.
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
-    let f = to_js_function(handler);
+    let f = to_js_function(handler)?;
     let tsfn: HandlerTsfn =
         f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
             |ctx| Ok((ctx.value,)),
@@ -572,4 +643,22 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     let mut routes = routes().lock().unwrap();
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_translate_pattern() {
+        assert_eq!(translate_pattern("/users/:id"), "/users/<id>");
+        assert_eq!(translate_pattern("/api/*"), "/api/<_..>");
+    }
+
+    #[test]
+    fn test_route_creation() {
+        let pattern = translate_pattern("/api/*");
+        let res = rocket::http::uri::Origin::parse_route(&pattern);
+        assert!(res.is_ok(), "failed to parse route: {:?}", res);
+    }
 }

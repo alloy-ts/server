@@ -1,13 +1,15 @@
+#![allow(special_module_name)]
+
 mod codegen;
 mod config;
 mod handler;
-mod rocket_app;
+mod main;
 mod route;
 mod server;
 
 pub use codegen::*;
 pub use config::*;
 pub use handler::*;
-pub use rocket_app::*;
+pub use main::*;
 pub use route::*;
 pub use server::*;

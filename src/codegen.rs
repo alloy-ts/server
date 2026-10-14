@@ -58,6 +58,12 @@ pub fn build_uri(uri_template: String, params: HashMap<String, String>) -> Strin
     result
 }
 
+/// Type-safe URI builder corresponding to Rocket's `uri!` macro (exported as `uri`).
+#[napi(js_name = "uri")]
+pub fn uri(uri_template: String, params: HashMap<String, String>) -> String {
+    build_uri(uri_template, params)
+}
+
 /// Simple percent-encoding helper for URI query and path parameters.
 fn urlencoding_encode(s: &str) -> String {
     let mut encoded = String::new();

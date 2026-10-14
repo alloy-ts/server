@@ -5,6 +5,7 @@ edition = "2021"
 autobins = false
 
 [lib]
+path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]

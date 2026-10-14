@@ -13,11 +13,6 @@
 //!     Ok(())
 //! }
 //! ```
-//!
-//! ...where the `async fn` is instead driven by NAPI's tokio runtime. JS handlers
-//! are bridged into Rocket via [`rocket::route::Handler`] / [`rocket::catcher::Handler`]
-//! implementations that call a JS callback through a
-//! [`napi::threadsafe_function::ThreadsafeFunction`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -34,6 +29,12 @@ use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
 use rocket::tokio::io::AsyncReadExt;
 use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
 use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
+
+/// Returns "Hello, world!" for the main test entry point.
+#[napi]
+pub fn main() -> String {
+    "Hello, world!".to_string()
+}
 
 /// Convert any displayable Rocket error into an NAPI error.
 fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
@@ -155,8 +156,15 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
 type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
 
 #[allow(deprecated)]
-fn to_js_function(handler: Unknown<'_>) -> JsFunction {
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn to_js_function(handler: Unknown<'_>) -> Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Expected a JS function handler",
+        ));
+    }
+    let f: JsFunction = unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) };
+    Ok(f)
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +291,7 @@ impl Rocket {
             .parse()
             .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
         let tsfn: HandlerTsfn =
-            to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+            to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
@@ -298,7 +306,7 @@ impl Rocket {
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown<'_>) -> Result<()> {
         let code: Option<u16> = code.map(|c| c as u16);
         let tsfn: HandlerTsfn =
-            to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+            to_js_function(handler)?.create_threadsafe_function(|ctx| Ok(ctx.value))?;
         let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();

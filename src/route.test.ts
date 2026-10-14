@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { createRoute, Alloy } from "./main.ts";
+import { createRoute } from "../dist/index.js";
 
 test("createRoute creates valid Route object metadata", () => {
   const route = createRoute("get", "/route/<path..>?query", "route_name", 2, "json");
@@ -11,7 +11,7 @@ test("createRoute creates valid Route object metadata", () => {
 });
 
 test("createRoute assigns default rank when rank is omitted", () => {
-  const route = Alloy.createRoute("post", "/items");
+  const route = createRoute("post", "/items");
   expect(route.method).toBe("POST");
   expect(route.uri).toBe("/items");
   expect(route.rank).toBe(-9);
