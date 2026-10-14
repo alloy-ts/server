@@ -51,7 +51,27 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
-## 2. Server Configuration (`Config`)
+## 2. Rocket Route & Ranking (`Route`)
+
+```ts
+import { Route, computeDefaultRank } from "@alloy-ts/server";
+
+// Compute default rank based on URI specificity
+const rank = computeDefaultRank("/foo/<id>?query"); // -8 (partial path, static query)
+
+// Create a route instance
+const route = new Route("GET", "/route/<path..>?query", "route_name", "json");
+console.log(route.rank); // -8
+console.log(route.method); // "GET"
+
+// Explicitly ranked route
+const customRoute = Route.ranked(2, "POST", "/submit");
+console.log(customRoute.rank); // 2
+```
+
+---
+
+## 3. Server Configuration (`Config`)
 
 ```ts
 import { Config } from "@alloy-ts/server";
@@ -80,7 +100,7 @@ const customConfig = Config.tryFrom({
 
 ---
 
-## 3. Route Decorators & Codegen Utilities
+## 4. Route Decorators & Codegen Utilities
 
 ```ts
 import { Get, Post, uri, routes, Codegen, responseJson } from "@alloy-ts/server";

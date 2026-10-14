@@ -11,13 +11,18 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **Threadsafe Handler Execution:** JavaScript route handlers execute via `napi::threadsafe_function` (`ThreadsafeFunction`), supporting async JS handlers that resolve `Promise<Response>`.
 - **`Rocket` Lifecycle Class:** Exposes `new Rocket(config)`, `mount(base, method, path, handler)`, `register(base, code, handler)`, `launch()`, and `shutdown()`.
 
-### 2. Full Configuration System (`Config`)
+### 2. Rocket Route Class & Ranking (`Route` & `computeDefaultRank`)
+
+- **`Route` NAPI Class:** Exposes `name`, `method`, `uri`, `rank`, and `format` properties, along with `new Route(method, uri, name?, format?)` and `Route.ranked(rank, method, uri, name?, format?)`.
+- **Default Ranking Algorithm (`computeDefaultRank`):** Implements Rocket's exact default ranking matrix based on path/query specificity (static, partial, wild, none) ranging from `-12` to `-1`.
+
+### 3. Full Configuration System (`Config`)
 
 - **Rocket Parameters:** Exposes `address`, `port`, `workers`, `max_blocking`, `keep_alive`, `ident`, `ip_header`, `limits`, `temp_dir`, `log_level`, `cli_colors`, `shutdown`, `tls`, and `secret_key`.
 - **Factory Helpers:** `Config.debugDefault()`, `Config.releaseDefault()`, `Config.defaultConfig()`, `Config.figment()`, and `Config.tryFrom(init)`.
 - **Eager Validation:** Modifying getters/setters (`cfg.address = "127.0.0.1"`, `cfg.limits = ...`) eagerly validates inputs and surfaces clear NAPI errors on invalid IP addresses, log levels, or byte units.
 
-### 3. Code Generation Facilities (`Codegen`)
+### 4. Code Generation Facilities (`Codegen`)
 
 - **Route Attribute Parser (`parseRouteAttribute`):** Parses Rocket route syntax (`#[get("/<name>?<age>", rank = 1, format = "json", data = "<form>")]`) into `RouteMeta` with path and query parameters (`ParamMeta`).
 - **Catcher Attribute Parser (`parseCatchAttribute`):** Parses HTTP status codes (`404`, `500`) or `"default"`.
@@ -25,7 +30,7 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **TypeScript Code Generators:**
   - `generateTsRoutes(routes)`: Emits TypeScript route table code.
   - `generateFormSchema(fields)`: Emits `FromForm` validation functions.
-- **Decorators & Macros:** `@Get`, `@Post`, `@Put`, `@Delete`, `@Route`, `@Catch`, `routes(...)`, and `catchers(...)`.
+- **Decorators & Macros:** `@Get`, `@Post`, `@Put`, `@Delete`, `@RouteDecorator`, `@Catch`, `routes(...)`, and `catchers(...)`.
 
 ---
 

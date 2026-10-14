@@ -65,7 +65,7 @@ export const Head = createRouteDecorator("HEAD");
 export const Options = createRouteDecorator("OPTIONS");
 export const Patch = createRouteDecorator("PATCH");
 
-export function Route(method: string, path: string, options?: RouteDecoratorOptions) {
+export function RouteDecorator(method: string, path: string, options?: RouteDecoratorOptions) {
   return createRouteDecorator(method)(path, options);
 }
 
