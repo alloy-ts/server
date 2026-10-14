@@ -8,7 +8,7 @@ use std::sync::Arc;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
-use napi::{JsFunction, Unknown};
+use napi::{JsFunction, Unknown, ValueType};
 use napi_derive::napi;
 use rocket::catcher::{Catcher as RocketCatcher, Handler as RocketCatcherHandler};
 use rocket::http::Status as RocketStatus;
@@ -19,12 +19,18 @@ use crate::server::{build_response, RequestInput, Response};
 type CatcherTsfn = ThreadsafeFunction<RequestInput, Promise<Response>, RequestInput, Status, false, false, 0>;
 
 #[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(
+            Status::InvalidArg,
+            "expected a function for catcher handler",
+        ));
+    }
     debug_assert_eq!(
         std::mem::size_of::<Unknown>(),
         std::mem::size_of::<JsFunction>()
     );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+    Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
 }
 
 #[derive(Clone)]
@@ -84,7 +90,7 @@ impl Catcher {
     #[allow(deprecated)]
     pub fn new(code: Option<u32>, handler: Unknown) -> napi::Result<Self> {
         let code_u16 = code.map(|c| c as u16);
-        let f = to_js_function(handler);
+        let f = to_js_function(handler)?;
         let tsfn: CatcherTsfn = f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
             |ctx| Ok(ctx.value),
         )?;

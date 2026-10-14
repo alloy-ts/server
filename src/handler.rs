@@ -11,7 +11,7 @@ use std::sync::Arc;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
-use napi::{JsFunction, Unknown};
+use napi::{JsFunction, Unknown, ValueType};
 use napi_derive::napi;
 use rocket::http::Status as RocketStatus;
 use rocket::request::Request;
@@ -67,12 +67,18 @@ pub fn outcome_forward() -> HandlerOutcome {
 type HandlerTsfn = ThreadsafeFunction<RequestInput, Promise<HandlerOutcome>, RequestInput, Status, false, false, 0>;
 
 #[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
+fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
+    if handler.get_type()? != ValueType::Function {
+        return Err(napi::Error::new(
+            Status::InvalidArg,
+            "expected a function for route handler",
+        ));
+    }
     debug_assert_eq!(
         std::mem::size_of::<Unknown>(),
         std::mem::size_of::<JsFunction>()
     );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+    Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
 }
 
 /// NAPI wrapper bridging a TypeScript handler callback into a [`rocket::route::Handler`].
@@ -82,9 +88,8 @@ pub struct NapiJsHandler {
 }
 
 impl NapiJsHandler {
-    #[allow(deprecated)]
     pub fn new(handler: Unknown) -> napi::Result<Self> {
-        let f = to_js_function(handler);
+        let f = to_js_function(handler)?;
         let tsfn: HandlerTsfn = f.create_threadsafe_function::<RequestInput, RequestInput, Promise<HandlerOutcome>, Status, _, false, false, 0>(
             |ctx| Ok(ctx.value),
         )?;
