@@ -1,10 +1,10 @@
-#![allow(dead_code)]
-
 mod app;
-mod codegen;
-mod config;
-mod handler;
-mod rocket;
-mod route;
-mod route_uri;
-mod server;
+pub mod catcher;
+pub mod codegen;
+pub mod config;
+pub mod fairing;
+pub mod handler;
+pub mod rocket;
+pub mod route;
+pub mod route_uri;
+pub mod server;

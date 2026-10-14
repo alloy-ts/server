@@ -89,12 +89,12 @@ test("parseRoute resolves single route input with type overrides and custom name
   expect(route.response).toBe("UserResponse");
 
   expect(route.params).toHaveLength(1);
-  expect(route.params[0].name).toBe("id");
-  expect(route.params[0].tsType).toBe("number");
+  expect(route.params[0]!.name).toBe("id");
+  expect(route.params[0]!.tsType).toBe("number");
 
   expect(route.query).toHaveLength(1);
-  expect(route.query[0].name).toBe("page");
-  expect(route.query[0].tsType).toBe("number");
+  expect(route.query[0]!.name).toBe("page");
+  expect(route.query[0]!.tsType).toBe("number");
 });
 
 test("parseRoutes resolves route array and deduplicates names", () => {
@@ -104,8 +104,8 @@ test("parseRoutes resolves route array and deduplicates names", () => {
   ]);
 
   expect(routes).toHaveLength(2);
-  expect(routes[0].name).toBe("postPosts");
-  expect(routes[1].name).toBe("postPosts_2");
+  expect(routes[0]!.name).toBe("postPosts");
+  expect(routes[1]!.name).toBe("postPosts_2");
 });
 
 test("generateTypes, generateClient, and generateModule emit valid TypeScript source", () => {
@@ -153,7 +153,7 @@ test("generateTypescriptClient generates client SDK from RouteSpecInput list", (
 
   expect(result.code).toContain("export class ProductStoreClient");
   expect(result.code).toContain("async getProduct(");
-  expect(result.code).toContain("as ResponseOf<\"GET /products/:id\">");
+  expect(result.code).toContain('as ResponseOf<"GET /products/:id">');
 });
 
 test("generateRouteHandler generates boilerplate handler function", () => {
