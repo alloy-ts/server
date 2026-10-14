@@ -43,7 +43,6 @@ use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
 use rocket::config::Config;
-use rocket::data::ByteUnit;
 use rocket::fairing::AdHoc;
 use rocket::http::{Header as RocketHeader, Method, Status as RocketStatus};
 use rocket::request::Request;
@@ -203,7 +202,8 @@ impl Handler for JsHandler {
             .unwrap_or_default();
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
-                let input = build_request(request, data, &pattern).await;
+                let mut data = data;
+                let input = build_request(request, &mut data, &pattern).await;
                 let promise = match tsfn.call_async(input).await {
                     Ok(p) => p,
                     Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
@@ -230,7 +230,7 @@ impl Handler for JsHandler {
 
 /// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
 /// including any `:param` / `<param>` path segments.
-async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
+pub(crate) async fn build_request(request: &Request<'_>, data: &mut Data<'_>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
     let path = uri.path().to_string();
@@ -241,11 +241,12 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
         .map(|h| (h.name.as_str().to_string(), h.value().to_string()))
         .collect();
 
-    // Read up to 1 MiB of body. Larger bodies are truncated for the MVP; raise
-    // the `ByteUnit` limit (or stream) when needed.
-    let body = match data.open(ByteUnit::Megabyte(1)).into_bytes().await {
-        Ok(capped) => Some(capped.value),
-        Err(_) => None,
+    // Peek up to 1 MiB of body without consuming `data`.
+    let peeked = data.peek(1024 * 1024).await;
+    let body = if peeked.is_empty() {
+        None
+    } else {
+        Some(peeked.to_vec())
     };
 
     let params = extract_params(pattern, &path);
@@ -330,7 +331,7 @@ fn translate_pattern(pattern: &str) -> String {
 
 /// Build a Rocket `Response` from a JS handler's `Response`, mirroring the
 /// `Responder` step in Rocket's generated code.
-fn build_response(payload: &Response) -> RocketResponse<'static> {
+pub(crate) fn build_response(payload: &Response) -> RocketResponse<'static> {
     let mut builder = RocketResponse::build();
     if let Some(status) = RocketStatus::from_code(payload.status as u16) {
         builder.status(status);
