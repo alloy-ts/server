@@ -8,7 +8,9 @@
 
 - [Quick Start](#quick-start)
 - [HTTP Server (`Alloy.serve`)](#http-server-alloyserve)
+- [Request Parsing Helpers](#request-parsing-helpers)
 - [Rocket Lifecycle (`Rocket`)](#rocket-lifecycle-rocket)
+- [Route Metadata (`Route`)](#route-metadata-route)
 - [Configuration (`Config`)](#configuration-config)
 - [Code Generation (`codegen`)](#code-generation-codegen)
   - [Route Pattern Parsing](#route-pattern-parsing)
@@ -92,6 +94,29 @@ server.stop();
 
 ---
 
+## Request Parsing Helpers
+
+Use `reqText` and `reqJson` to parse incoming request bodies smoothly:
+
+```ts
+import { serve, responseJson, reqJson, reqText } from "@alloy-ts/server";
+
+serve({
+  routes: {
+    "/api/echo": async (req) => {
+      const text = reqText(req);
+      return responseJson({ receivedText: text });
+    },
+    "/api/data": async (req) => {
+      const payload = reqJson<{ name: string }>(req);
+      return responseJson({ name: payload?.name ?? "Anonymous" });
+    },
+  },
+});
+```
+
+---
+
 ## Rocket Lifecycle (`Rocket`)
 
 For direct programmatic control over Rocket's lifecycle (mounting routes, registering catchers, ignition, launch, and shutdown):
@@ -122,6 +147,28 @@ To initiate graceful shutdown programmatically:
 
 ```ts
 rocket.shutdown();
+```
+
+---
+
+## Route Metadata (`Route`)
+
+`Route` mirrors Rocket's `rocket::Route` structure, giving access to method, URI, rank calculation, and base URI mapping:
+
+```ts
+import { Route } from "@alloy-ts/server";
+
+// Computed default rank (-9 for static path with no query)
+const index = Route.create("GET", "/");
+console.log(index.rank); // -9
+
+// Explicit rank
+const custom = Route.ranked(2, "GET", "/route/<path..>?query");
+console.log(custom.rank); // 2
+
+// Map base URI
+custom.mapBase("/api");
+console.log(custom.uri); // "/api/route/<path..>?query"
 ```
 
 ---
