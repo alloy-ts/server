@@ -11,6 +11,7 @@ import {
   parseRoutePattern,
   post,
   Response,
+  RouteMetadata,
   uri,
 } from "./main.ts";
 
@@ -34,6 +35,22 @@ test("Config default profiles and parameters", () => {
     const cfg = new Config();
     expect(cfg.port).toBeGreaterThan(0);
     expect(Config.parameters()).toContain("port");
+  }
+});
+
+test("RouteMetadata class", () => {
+  if (RouteMetadata) {
+    const route = new RouteMetadata("GET", "/test/<id>", "test_route", 1, "json");
+    expect(route.method).toBe("GET");
+    expect(route.uri).toBe("/test/<id>");
+    expect(route.name).toBe("test_route");
+    expect(route.rank).toBe(1);
+    expect(route.format).toBe("json");
+
+    const rankedRoute = RouteMetadata.ranked(2, "POST", "/posts");
+    expect(rankedRoute.method).toBe("POST");
+    expect(rankedRoute.uri).toBe("/posts");
+    expect(rankedRoute.rank).toBe(2);
   }
 });
 
