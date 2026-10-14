@@ -114,6 +114,7 @@ pub struct ResponseInit {
 /// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
 /// produce.
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Response {
     pub status: u32,
     pub headers: HashMap<String, String>,
