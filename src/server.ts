@@ -32,6 +32,8 @@ export const responseRedirect = native.responseRedirect;
 export const file = native.file;
 export const registerRoute = native.registerRoute;
 export const Server = native.Server;
+export const Route = native.Route;
+export type Route = InstanceType<typeof native.Route>;
 
 export interface ServeOptions {
   routes?: Record<string, any>;
