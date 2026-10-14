@@ -4,7 +4,7 @@ This document summarizes the current status of NAPI bindings for the Rocket web 
 
 ## Implemented NAPI Surface
 
-### Server & Routing (`src/server.rs`, `src/route.rs`)
+### Server & Routing (`src/server.rs`, `src/route.rs`, `src/handler.rs`)
 - [x] `Alloy.serve(...)` and `Bun.serve(...)` with Bun.server options (`routes`, `fetch`, `port`, `hostname`, `unix`).
 - [x] Static routes, dynamic route parameters (`:id`, `<id>`), wildcard catch-alls (`/api/*` -> `<_..>`).
 - [x] Per-HTTP method handlers (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`).
@@ -13,6 +13,7 @@ This document summarizes the current status of NAPI bindings for the Rocket web 
 - [x] Fallback `fetch(req)` handler for unmatched routes.
 - [x] `App` class for `app.get()`, `app.post()`, `app.launch()`, `app.stop()` re-expressing Rocket macros at runtime.
 - [x] `Route` NAPI class (`Route.ranked(rank, method, uri)`) inspecting and constructing Rocket route metadata.
+- [x] `Outcome` and `OutcomeHelper` NAPI bindings for `Success`, `Error`, and `Forward` handler outcomes.
 - [x] Per-server graceful shutdown via `server.stop()`.
 - [x] Port fallback checks (`BUN_PORT`, `PORT`, `NODE_PORT`) and port `0` dynamic assignment.
 

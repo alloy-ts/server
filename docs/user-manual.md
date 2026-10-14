@@ -7,6 +7,7 @@
 - **Bun / Alloy `serve` compatible API**: `Alloy.serve` and `Bun.serve` support routes, method maps, wildcards, redirects, and file markers.
 - **`App` class**: Express-like syntax (`new App().get(...)`) re-expressing Rocket macros (`#[get]`, `routes!`, `#[launch]`) at runtime.
 - **Rocket `Route` NAPI bindings**: Inspect and construct Rocket route metadata (`Route.ranked(rank, method, uri)`).
+- **Rocket `Handler` & `Outcome` NAPI bindings**: Represent route outcomes (`OutcomeHelper.success`, `OutcomeHelper.error`, `OutcomeHelper.forward`).
 - **Rocket `Config` NAPI bindings**: Direct JS access to Rocket configuration options (address, port, workers, limits, shutdown, TLS, etc.).
 - **TypeScript Codegen**: Generate typed client code and URI builders directly from route tables.
 
