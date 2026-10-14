@@ -1,5 +1,6 @@
 import { native } from "./native.ts";
 import {
+  App,
   Response,
   file,
   launch,
@@ -17,6 +18,7 @@ export function main(): string {
 }
 
 export {
+  App,
   Response,
   file,
   launch,

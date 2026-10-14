@@ -92,3 +92,51 @@ export function serve(routesOrOptions?: any, fetchFn?: any, opts?: ServeOptions)
   }
   return native.serve(routesOrOptions, fetchFn, opts);
 }
+
+export class App {
+  private routes: Record<string, Record<string, any>> = {};
+  private serverInstance: any = null;
+
+  get(path: string, handler: any): this {
+    return this.route("GET", path, handler);
+  }
+
+  post(path: string, handler: any): this {
+    return this.route("POST", path, handler);
+  }
+
+  put(path: string, handler: any): this {
+    return this.route("PUT", path, handler);
+  }
+
+  delete(path: string, handler: any): this {
+    return this.route("DELETE", path, handler);
+  }
+
+  patch(path: string, handler: any): this {
+    return this.route("PATCH", path, handler);
+  }
+
+  route(method: string, path: string, handler: any): this {
+    const upperMethod = method.toUpperCase();
+    if (!this.routes[path]) {
+      this.routes[path] = {};
+    }
+    this.routes[path][upperMethod] = handler;
+    return this;
+  }
+
+  launch(options?: ServeOptions): any {
+    this.serverInstance = serve({
+      routes: this.routes,
+      ...options,
+    });
+    return this.serverInstance;
+  }
+
+  stop(): void {
+    if (this.serverInstance) {
+      this.serverInstance.stop();
+    }
+  }
+}
