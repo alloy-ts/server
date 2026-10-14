@@ -76,6 +76,41 @@ pub struct ResponsePayload {
     pub body: Option<Buffer>,
 }
 
+fn extract_route_params(pattern: &str, path: &str) -> HashMap<String, String> {
+    let p_segs: Vec<&str> = pattern
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let a_segs: Vec<&str> = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut params = HashMap::new();
+    for (idx, seg) in p_segs.iter().enumerate() {
+        if let Some(inner) = seg.strip_prefix('<') {
+            let is_trailing = inner.ends_with("..>");
+            let name = inner
+                .strip_suffix("..>")
+                .or_else(|| inner.strip_suffix('>'));
+            if let Some(name) = name {
+                if name != "_" {
+                    if is_trailing {
+                        if idx < a_segs.len() {
+                            let rest = a_segs[idx..].join("/");
+                            params.insert(name.to_string(), rest);
+                        }
+                    } else if let Some(v) = a_segs.get(idx) {
+                        params.insert(name.to_string(), (*v).to_string());
+                    }
+                }
+            }
+        }
+    }
+    params
+}
+
 /// Build a `RequestPayload` from a Rocket request. The body is read fully when
 /// `data` is supplied; catchers receive `None` and produce no body.
 pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
@@ -107,7 +142,14 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
         None => None,
     };
 
-    let params: HashMap<String, String> = HashMap::new();
+    let params: HashMap<String, String> = req
+        .route()
+        .map(|route| {
+            let pattern = route.uri.to_string();
+            let path = req.uri().path().to_string();
+            extract_route_params(&pattern, &path)
+        })
+        .unwrap_or_default();
 
     RequestPayload {
         method,

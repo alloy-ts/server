@@ -21,6 +21,7 @@ use napi_derive::napi;
 use rocket::http::Status as RocketStatus;
 use rocket::request::Request;
 use rocket::response::Response as RocketResponse;
+use rocket::catcher::{Handler as RocketCatcherHandler, Result as CatcherResult};
 use rocket::route::{Handler as RocketRouteHandler, Outcome as RouteOutcome};
 use rocket::Data;
 
@@ -98,6 +99,33 @@ impl HandlerBridge {
             action: "forward".to_string(),
             response: None,
             status: Some(status),
+        }
+    }
+}
+
+#[rocket::async_trait]
+impl RocketCatcherHandler for HandlerBridge {
+    async fn handle<'r>(&self, status: RocketStatus, req: &'r Request<'_>) -> CatcherResult<'r> {
+        let payload = build_request_payload(req, None).await;
+        match self.tsfn.call_async((payload,)).await {
+            Ok(outcome) => match outcome.action.as_str() {
+                "success" => {
+                    let resp = outcome
+                        .response
+                        .map(build_response)
+                        .unwrap_or_else(|| RocketResponse::build().finalize());
+                    Ok(resp)
+                }
+                "error" => {
+                    let err_status = outcome
+                        .status
+                        .and_then(|s| RocketStatus::from_code(s as u16))
+                        .unwrap_or(status);
+                    Err(err_status)
+                }
+                _ => Err(status),
+            },
+            Err(_) => Err(status),
         }
     }
 }

@@ -1,3 +1,4 @@
+mod catcher;
 mod codegen;
 mod config;
 mod handler;
