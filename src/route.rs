@@ -26,14 +26,22 @@ impl Route {
             .parse()
             .map_err(|_| napi::Error::new(napi::Status::GenericFailure, format!("invalid HTTP method: {method}")))?;
 
-        let mut route = RocketRoute::new(rocket_method, &uri, dummy_handler);
+        let route_res = std::panic::catch_unwind(|| {
+            RocketRoute::new(rocket_method, &uri, dummy_handler)
+        });
+        let mut route = route_res.map_err(|_| {
+            napi::Error::new(napi::Status::InvalidArg, format!("invalid route URI: {uri}"))
+        })?;
         if let Some(n) = name {
             route.name = Some(n.into());
         }
-        if let Some(f) = format {
-            if let Ok(media_type) = f.parse() {
-                route.format = Some(media_type);
-            }
+        let format_val = if let Some(ref f) = format {
+            rocket::http::ContentType::parse_flexible(f).map(|ct| ct.0)
+        } else {
+            None
+        };
+        if format_val.is_some() {
+            route.format = format_val;
         }
 
         Ok(Route {
@@ -53,14 +61,22 @@ impl Route {
             .map_err(|_| napi::Error::new(napi::Status::GenericFailure, format!("invalid HTTP method: {method}")))?;
 
         let rank_opt = rank.map(|r| r as isize);
-        let mut route = RocketRoute::ranked(rank_opt, rocket_method, &uri, dummy_handler);
+        let route_res = std::panic::catch_unwind(|| {
+            RocketRoute::ranked(rank_opt, rocket_method, &uri, dummy_handler)
+        });
+        let mut route = route_res.map_err(|_| {
+            napi::Error::new(napi::Status::InvalidArg, format!("invalid route URI: {uri}"))
+        })?;
         if let Some(n) = name {
             route.name = Some(n.into());
         }
-        if let Some(f) = format {
-            if let Ok(media_type) = f.parse() {
-                route.format = Some(media_type);
-            }
+        let format_val = if let Some(ref f) = format {
+            rocket::http::ContentType::parse_flexible(f).map(|ct| ct.0)
+        } else {
+            None
+        };
+        if format_val.is_some() {
+            route.format = format_val;
         }
 
         Ok(Route {
