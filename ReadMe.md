@@ -1,11 +1,13 @@
-# Server
+# `@alloy-ts/server`
 
-Node.js (TypeScript) NAPI bindings for the Rocket web framework and code generation utilities.
+Node.js (TypeScript) NAPI bindings for the [Rocket web framework](https://rocket.rs) and code generation utilities.
+
+---
 
 ## Features
 
-- **High-performance HTTP server (`Alloy.serve` / `serve`)**: Bun/Alloy-style routing backed by Rocket.
-- **Rocket Server Lifecycle (`Rocket`)**: Direct programmatic control over mounting routes, registering catchers, ignition, and graceful shutdown.
+- **High-performance HTTP server (`serve`)**: Bun/Alloy-style routing backed by Rocket's HTTP runtime.
+- **Rocket Server Lifecycle (`Rocket`)**: Direct programmatic control over mounting routes, registering catchers, ignition, launch, and graceful shutdown.
 - **Rocket Configuration (`Config`)**: Full mirror of Rocket's server configuration (`Config.debugDefault()`, `Config.tryFrom()`, limits, shutdown signals, log levels).
 - **TypeScript Code Generation (`codegen`)**:
   - `parseRocketRoutePattern`: Extract dynamic path/query parameters from Rocket route strings.
@@ -18,24 +20,24 @@ Node.js (TypeScript) NAPI bindings for the Rocket web framework and code generat
 
 ## Quick Start
 
-### Basic Server (`Alloy.serve`)
+### Basic Server (`serve`)
 
 ```ts
-import { serve, Response, file } from "@alloy-ts/server";
+import { serve, response, responseJson, responseRedirect, file } from "@alloy-ts/server";
 
 const server = serve({
-  port: 3000,
   routes: {
-    "/api/status": new Response("OK"),
-    "/users/:id": (req) => new Response(`Hello ${req.params?.id}`),
+    "/api/status": response("OK"),
+    "/users/:id": (req) => response(`Hello User ${req.params?.id}`),
     "/api/posts": {
-      GET: () => new Response("List posts"),
-      POST: async (req) => Response.json({ created: true }),
+      GET: () => response("List posts"),
+      POST: async () => responseJson({ created: true }),
     },
+    "/blog/hello": responseRedirect("/blog/hello/world"),
     "/favicon.ico": file("./favicon.ico"),
   },
-  fetch(req) {
-    return new Response("Not Found", { status: 404 });
+  fetch(_req) {
+    return response("Not Found", { status: 404 });
   },
 });
 
@@ -74,13 +76,10 @@ const result = generateTypescriptClient(
       method: "GET",
       path: "/users/<id>",
       name: "getUser",
-      params: [
-        { name: "id", paramType: "string", isPath: true, isQuery: false, isOptional: false },
-      ],
       returnType: "Promise<{ id: string; name: string }>",
     },
   ],
-  { clientName: "UserApiClient" },
+  { clientName: "UserApiClient", baseUrl: "https://api.example.com" },
 );
 
 console.log(result.code);
@@ -88,13 +87,15 @@ console.log(result.code);
 
 ---
 
+## Documentation
+
+- [User Manual](docs/user-manual.md)
+- [Implementation Status](docs/implementation-status.md)
+- Examples: [examples/server.ts](examples/server.ts), [examples/app-routes.ts](examples/app-routes.ts)
+
+---
+
 ## Development
-
-- Configure local hooks:
-
-```bash
-npm run prepare
-```
 
 - Install dependencies:
 
@@ -114,19 +115,7 @@ npm test
 npm run build
 ```
 
-- Code formatting:
-
-```bash
-npm run fmt
-```
-
-- Linting:
-
-```bash
-npm run lint
-```
-
-- Code check:
+- Code check (formatting, linting, type checks):
 
 ```bash
 npm run check
