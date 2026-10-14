@@ -35,6 +35,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
+use napi::bindgen_prelude::FnArgs;
 use napi::threadsafe_function::ThreadsafeFunction;
 #[allow(deprecated)]
 use napi::{JsFunction, Unknown};
@@ -60,7 +61,7 @@ use rocket::{Data, Shutdown};
 /// function's resolved value (`Promise<Response>`, whose `FromNapiValue` awaits
 /// the JS promise for us).
 type HandlerTsfn =
-    ThreadsafeFunction<RequestInput, Promise<Response>, (RequestInput,), Status, true, false, 0>;
+    ThreadsafeFunction<RequestInput, Promise<Response>, FnArgs<(RequestInput,)>, Status, false, false, 0>;
 
 /// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
 /// a JS object) into a `napi::JsFunction` so we can call
@@ -90,7 +91,7 @@ pub struct RequestInput {
     pub query: String,
     pub headers: HashMap<String, String>,
     pub body: Option<Vec<u8>>,
-    pub params: HashMap<String, String>,
+    pub params: Option<HashMap<String, String>>,
 }
 
 /// Init passed to the `Response` constructors / helpers.
@@ -207,7 +208,7 @@ pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern
         query,
         headers,
         body,
-        params,
+        params: if params.is_empty() { None } else { Some(params) },
     }
 }
 
@@ -245,9 +246,15 @@ fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
 }
 
 /// Translate a Bun/Express-style pattern (`:name`, `*`) into Rocket syntax
-/// (`<name>`, `<_..>`).
+/// (`<name>`, `<_rest..>`).
 fn translate_pattern(pattern: &str) -> String {
-    let mut out = String::with_capacity(pattern.len());
+    if pattern == "*" || pattern == "/*" {
+        return "/<_rest..>".to_string();
+    }
+    let mut out = String::with_capacity(pattern.len() + 6);
+    if !pattern.starts_with('/') {
+        out.push('/');
+    }
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == ':' {
@@ -266,9 +273,10 @@ fn translate_pattern(pattern: &str) -> String {
                 out.push_str(&format!("<{name}>"));
             }
         } else if c == '*' {
-            // Multi-segment glob: Alloy's `*` matches "all routes that start
-            // with <prefix>" (e.g. `/api/*` covers `/api/foo/bar`).
-            out.push_str("<_..>");
+            if !out.ends_with('/') {
+                out.push('/');
+            }
+            out.push_str("<_rest..>");
         } else {
             out.push(c);
         }
@@ -321,8 +329,8 @@ fn mount_value<'env>(
         ValueType::Function => {
             let f = to_js_function(value);
             let tsfn: HandlerTsfn =
-                f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-                    |ctx| Ok((ctx.value,)),
+                f.create_threadsafe_function::<RequestInput, FnArgs<(RequestInput,)>, Promise<Response>, Status, _, false, false, 0>(
+                    |ctx| Ok(FnArgs { data: (ctx.value,) }),
                 )?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
@@ -423,8 +431,8 @@ pub fn serve(
     if let Some(fetch) = fetch {
         let f = to_js_function(fetch);
         let tsfn: HandlerTsfn =
-            f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-                |ctx| Ok((ctx.value,)),
+            f.create_threadsafe_function::<RequestInput, FnArgs<(RequestInput,)>, Promise<Response>, Status, _, false, false, 0>(
+                |ctx| Ok(FnArgs { data: (ctx.value,) }),
             )?;
         let tsfn = Arc::new(tsfn);
         for m in ALL_METHODS {
@@ -519,8 +527,8 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
     let f = to_js_function(handler);
     let tsfn: HandlerTsfn =
-        f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<Response>, Status, _, true, false, 0>(
-            |ctx| Ok((ctx.value,)),
+        f.create_threadsafe_function::<RequestInput, FnArgs<(RequestInput,)>, Promise<Response>, Status, _, false, false, 0>(
+            |ctx| Ok(FnArgs { data: (ctx.value,) }),
         )?;
     let m: Method = method
         .parse()

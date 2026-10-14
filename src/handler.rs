@@ -96,12 +96,18 @@ impl Handler for JsHandler {
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
                 let input = build_request(request, data, &pattern).await;
-                let output = match tsfn.call_async(Ok(input)).await {
+                let output = match tsfn.call_async(input).await {
                     Ok(promise) => match promise.await {
                         Ok(payload) => payload,
-                        Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
+                        Err(e) => {
+                            eprintln!("JS Promise Error: {e:?}");
+                            return RouteOutcome::Error(RocketStatus::InternalServerError);
+                        }
                     },
-                    Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
+                    Err(e) => {
+                        eprintln!("TSFN Call Error: {e:?}");
+                        return RouteOutcome::Error(RocketStatus::InternalServerError);
+                    }
                 };
                 RouteOutcome::Success(build_response(&output))
             }
