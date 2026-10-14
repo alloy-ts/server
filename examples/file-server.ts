@@ -1,4 +1,4 @@
-import { file, response, serve } from "../src/main.ts";
+import { file, response, serve } from "../dist/index.js";
 
 const server = serve(
   {

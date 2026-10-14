@@ -4,7 +4,7 @@ This document provides a technical status summary of the Rocket web framework NA
 
 ## Architecture & Native Modules
 
-The library is organized into six main Rust modules exposed via NAPI-RS (`src/lib.rs`):
+The library is organized into seven main Rust modules exposed via NAPI-RS (`src/lib.rs`):
 
 | Module    | Location         | Purpose                                                 | Key NAPI Exports                                                                                                       |
 | --------- | ---------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -14,6 +14,7 @@ The library is organized into six main Rust modules exposed via NAPI-RS (`src/li
 | `app`     | `src/app.rs`     | Programmatic Rocket application lifecycle & `App`       | `App`, `Rocket`, `RocketConfig`, `launch`, `rocketMain`, `RequestPayload`, `ResponsePayload`                           |
 | `handler` | `src/handler.rs` | Rocket `Handler` trait bindings & Outcome types         | `HandlerOutcome`, `OutcomeKind`, `JsHandler`                                                                           |
 | `route`   | `src/route.rs`   | Route metadata, rank computation & ranking table        | `RouteInfo`, `computeDefaultRank`, `createRouteInfo`                                                                   |
+| `catcher` | `src/catcher.rs` | Error catchers and default response generators          | `CatcherInfo`, `createCatcherInfo`, `defaultCatcherResponse`                                                           |
 
 ## Implementation Review: Rocket Working in TS
 
@@ -48,9 +49,11 @@ The library is organized into six main Rust modules exposed via NAPI-RS (`src/li
   - `HandlerOutcome` and `OutcomeKind` (`Success`, `Error`, `Forward`) for explicit outcome handling.
 - [x] **Route Metadata & Ranking Table (`route`)**:
   - `RouteInfo` and `computeDefaultRank()` matching Rocket's default ranking table (-12 static to -1 wild).
+- [x] **Catcher Bindings (`catcher`)**:
+  - `CatcherInfo`, status code validation `[400, 600)`, `defaultCatcherResponse()` generating HTML or JSON error templates.
 
 ## Unit Testing & Verification
 
-- **Tests Executed**: `vp test` (13/13 unit tests passing across `src/main.test.ts`, `src/config.test.ts`, and `src/handler.test.ts`).
+- **Tests Executed**: `vp test` (16/16 unit tests passing across `src/main.test.ts`, `src/config.test.ts`, `src/handler.test.ts`, and `src/catcher.test.ts`).
 - **Code Check**: `vp check` passing with zero warnings or errors.
 - **Example Runner**: Example TS scripts verified via `@oxc-node/core/register.mjs`.

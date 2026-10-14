@@ -1,4 +1,4 @@
-import { Config, Rocket } from "../src/main.ts";
+import { Config, Rocket } from "../dist/index.js";
 
 // Create a custom Rocket configuration using Config.tryFrom or Config instance
 const config = Config.tryFrom({

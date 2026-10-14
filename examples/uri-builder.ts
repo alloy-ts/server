@@ -1,4 +1,4 @@
-import { uri } from "../src/main.ts";
+import { uri } from "../dist/index.js";
 
 // Rocket uri! macro equivalent for TypeScript
 console.log("=== Rocket URI Codegen Builder Examples ===");

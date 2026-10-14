@@ -1,4 +1,4 @@
-import { App, responseJson } from "../src/main.ts";
+import { App, responseJson } from "../dist/index.js";
 
 interface Item {
   id: string;

@@ -10,13 +10,14 @@ Welcome to `@alloy-ts/server` — TypeScript and Node.js NAPI bindings for the [
 
 `@alloy-ts/server` maps Rocket's core Rust constructs to TypeScript:
 
-| Rocket Construct                   | TypeScript / NAPI Export                                 | Description                                                         |
-| ---------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
-| `rocket::build().mount().launch()` | `serve()`, `App`, `Rocket`                               | Launch a Rocket HTTP server backed by Tokio                         |
-| `Config` & Figment                 | `Config`, `ConfigInit`                                   | Full profile, limits, shutdown, and TLS server configuration        |
-| `uri!` macro                       | `uri()`                                                  | Type-safe and URL-safe parameter interpolation & query encoding     |
-| `Handler` trait                    | `JsHandler`, `HandlerOutcome`, `OutcomeKind`             | Bridge JS callbacks & custom handlers into Rocket's `Handler` trait |
-| `Route` struct                     | `RouteInfo`, `computeDefaultRank()`, `createRouteInfo()` | Inspect route metadata, ranks, methods, and media formats           |
+| Rocket Construct                   | TypeScript / NAPI Export                                         | Description                                                         |
+| ---------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `rocket::build().mount().launch()` | `serve()`, `App`, `Rocket`                                       | Launch a Rocket HTTP server backed by Tokio                         |
+| `Config` & Figment                 | `Config`, `ConfigInit`                                           | Full profile, limits, shutdown, and TLS server configuration        |
+| `uri!` macro                       | `uri()`                                                          | Type-safe and URL-safe parameter interpolation & query encoding     |
+| `Handler` trait                    | `JsHandler`, `HandlerOutcome`, `OutcomeKind`                     | Bridge JS callbacks & custom handlers into Rocket's `Handler` trait |
+| `Route` struct                     | `RouteInfo`, `computeDefaultRank()`, `createRouteInfo()`         | Inspect route metadata, ranks, methods, and media formats           |
+| `Catcher` struct                   | `CatcherInfo`, `createCatcherInfo()`, `defaultCatcherResponse()` | Custom error catchers for status codes (404, 500, etc.)             |
 
 ## Quickstart
 
@@ -77,6 +78,28 @@ app.get("/", async () => response("Hello World!"));
 app.get("/users/:id", async (req) => response(`User ${req.params.id}`));
 
 app.launch();
+```
+
+## Error Catchers (`Catcher`)
+
+Catchers handle errors arising from routing failures, guard rejections, or responder errors:
+
+```ts
+import { Rocket, createCatcherInfo, defaultCatcherResponse } from "@alloy-ts/server";
+
+const rocket = new Rocket({ port: 8080 });
+
+// Register custom 404 error handler
+rocket.register("/", 404, (req) => {
+  return {
+    status: 404,
+    headers: [{ name: "Content-Type", value: "text/plain" }],
+    body: Buffer.from(`Resource not found at ${req.path}`),
+  };
+});
+
+// Generate default HTML or JSON error response
+const jsonError = defaultCatcherResponse(500, true);
 ```
 
 ## Rocket Configuration (`Config`)
