@@ -104,6 +104,7 @@ pub struct ResponseInit {
 /// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
 /// produce.
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct Response {
     pub status: u32,
     pub headers: HashMap<String, String>,
@@ -564,4 +565,21 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     let mut routes = routes().lock().unwrap();
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
+}
+
+/// Parse request body bytes into a UTF-8 string.
+#[napi]
+pub fn req_text(body: Option<Vec<u8>>) -> String {
+    body.map(|b| String::from_utf8_lossy(&b).to_string())
+        .unwrap_or_default()
+}
+
+/// Parse request body bytes into a JSON value.
+#[napi]
+pub fn req_json(body: Option<Vec<u8>>) -> Option<serde_json::Value> {
+    let body = body?;
+    if body.is_empty() {
+        return None;
+    }
+    serde_json::from_slice(&body).ok()
 }

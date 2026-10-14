@@ -8,7 +8,8 @@
 
 - [Quick Start](#quick-start)
 - [HTTP Server (`Alloy.serve`)](#http-server-alloyserve)
-- [Request Parsing Helpers](#request-parsing-helpers)
+- [Request Body Helpers (`reqText`, `reqJson`)](#request-body-helpers-reqtext-reqjson)
+- [Custom Handler Outcomes (`HandlerOutcome`)](#custom-handler-outcomes-handleroutcome)
 - [Rocket Lifecycle (`Rocket`)](#rocket-lifecycle-rocket)
 - [Route Metadata (`Route`)](#route-metadata-route)
 - [Configuration (`Config`)](#configuration-config)
@@ -94,9 +95,9 @@ server.stop();
 
 ---
 
-## Request Parsing Helpers
+## Request Body Helpers (`reqText`, `reqJson`)
 
-Use `reqText` and `reqJson` to parse incoming request bodies smoothly:
+Use `reqText` and `reqJson` to parse raw request body bytes smoothly:
 
 ```ts
 import { serve, responseJson, reqJson, reqText } from "@alloy-ts/server";
@@ -104,15 +105,34 @@ import { serve, responseJson, reqJson, reqText } from "@alloy-ts/server";
 serve({
   routes: {
     "/api/echo": async (req) => {
-      const text = reqText(req);
+      const text = reqText(req.body);
       return responseJson({ receivedText: text });
     },
     "/api/data": async (req) => {
-      const payload = reqJson<{ name: string }>(req);
+      const payload = reqJson<{ name: string }>(req.body);
       return responseJson({ name: payload?.name ?? "Anonymous" });
     },
   },
 });
+```
+
+---
+
+## Custom Handler Outcomes (`HandlerOutcome`)
+
+`HandlerOutcome` mirrors Rocket's `Outcome` enum (`Success`, `Error`, `Forward`) for custom handler logic:
+
+```ts
+import { HandlerOutcome, response } from "@alloy-ts/server";
+
+// Success outcome
+const successOutcome = HandlerOutcome.success(response("OK", { status: 200 }));
+
+// Error outcome
+const errorOutcome = HandlerOutcome.error(404);
+
+// Forward outcome (pass request to next matching route)
+const forwardOutcome = HandlerOutcome.forward(400);
 ```
 
 ---

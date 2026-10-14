@@ -7,6 +7,8 @@ Node.js (TypeScript) NAPI bindings for the [Rocket web framework](https://rocket
 ## Features
 
 - **High-performance HTTP server (`serve`)**: Bun/Alloy-style routing backed by Rocket's HTTP runtime.
+- **Request Helpers (`reqText`, `reqJson`)**: Native request body parsing for UTF-8 text and JSON.
+- **Handler Outcomes (`HandlerOutcome`)**: Native outcome support (`success`, `error`, `forward`).
 - **Rocket Server Lifecycle (`Rocket`)**: Direct programmatic control over mounting routes, registering catchers, ignition, launch, and graceful shutdown.
 - **Rocket Configuration (`Config`)**: Full mirror of Rocket's server configuration (`Config.debugDefault()`, `Config.tryFrom()`, limits, shutdown signals, log levels).
 - **TypeScript Code Generation (`codegen`)**:
@@ -23,15 +25,24 @@ Node.js (TypeScript) NAPI bindings for the [Rocket web framework](https://rocket
 ### Basic Server (`serve`)
 
 ```ts
-import { serve, response, responseJson, responseRedirect, file } from "@alloy-ts/server";
+import {
+  serve,
+  response,
+  responseJson,
+  responseRedirect,
+  file,
+  reqText,
+  reqJson,
+} from "@alloy-ts/server";
 
 const server = serve({
   routes: {
     "/api/status": response("OK"),
     "/users/:id": (req) => response(`Hello User ${req.params?.id}`),
+    "/api/echo": async (req) => responseJson({ text: reqText(req.body) }),
     "/api/posts": {
       GET: () => response("List posts"),
-      POST: async () => responseJson({ created: true }),
+      POST: async (req) => responseJson({ body: reqJson(req.body) }),
     },
     "/blog/hello": responseRedirect("/blog/hello/world"),
     "/favicon.ico": file("./favicon.ico"),
