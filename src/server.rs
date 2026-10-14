@@ -290,7 +290,6 @@ const ALL_METHODS: &[Method] = &[
     Method::Options,
 ];
 
-#[allow(deprecated)]
 fn mount_value<'env>(
     value: Unknown<'env>,
     pattern: &str,
@@ -307,40 +306,38 @@ fn mount_value<'env>(
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
-            let v = value.clone();
-            if let Ok(obj) = unsafe { v.cast::<Object>() } {
-                if obj.has_named_property("path")? && !obj.has_named_property("status")? {
-                    if let Ok(path) = obj.get_named_property::<String>("path") {
-                        push_kind(
-                            RouteKind::File { path },
-                            pattern,
-                            methods,
-                            out,
-                        );
-                        return Ok(());
-                    }
-                }
-                if obj.has_named_property("status")? {
-                    let status = obj.get_named_property::<u32>("status")?;
-                    let headers = obj.get_named_property::<HashMap<String, String>>("headers").unwrap_or_default();
-                    let body = obj.get_named_property::<Option<Vec<u8>>>("body").unwrap_or(None);
+            let obj = value.coerce_to_object()?;
+            if obj.has_named_property("path")? && !obj.has_named_property("status")? {
+                if let Ok(path) = obj.get_named_property::<String>("path") {
                     push_kind(
-                        RouteKind::Static(Arc::new(Response { status, headers, body })),
+                        RouteKind::File { path },
                         pattern,
                         methods,
                         out,
                     );
                     return Ok(());
                 }
-                let names = obj.get_property_names()?;
-                let len = names.get_array_length_unchecked()?;
-                for i in 0..len {
-                    let method: String = names.get_element(i)?;
-                    let m_upper = method.to_ascii_uppercase();
-                    if let Ok(m) = m_upper.parse::<Method>() {
-                        let method_value: Unknown<'_> = obj.get_named_property(&method)?;
-                        mount_value(method_value, pattern, &[m], out)?;
-                    }
+            }
+            if obj.has_named_property("status")? {
+                let status = obj.get_named_property::<u32>("status")?;
+                let headers = obj.get_named_property::<HashMap<String, String>>("headers").unwrap_or_default();
+                let body = obj.get_named_property::<Option<Vec<u8>>>("body").unwrap_or(None);
+                push_kind(
+                    RouteKind::Static(Arc::new(Response { status, headers, body })),
+                    pattern,
+                    methods,
+                    out,
+                );
+                return Ok(());
+            }
+            let names = obj.get_property_names()?;
+            let len = names.get_array_length_unchecked()?;
+            for i in 0..len {
+                let method: String = names.get_element(i)?;
+                let m_upper = method.to_ascii_uppercase();
+                if let Ok(m) = m_upper.parse::<Method>() {
+                    let method_value: Unknown<'_> = obj.get_named_property(&method)?;
+                    mount_value(method_value, pattern, &[m], out)?;
                 }
             }
         }
@@ -358,7 +355,6 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
 }
 
 type ShutdownSlot = Arc<Mutex<Option<Shutdown>>>;
-static SHUTDOWN: OnceLock<ShutdownSlot> = OnceLock::new();
 
 #[napi]
 pub fn serve(
@@ -376,7 +372,7 @@ pub fn serve(
 
     if let Some(arg) = routes_or_options {
         if arg.get_type()? == ValueType::Object {
-            let obj: Object = unsafe { arg.cast()? };
+            let obj = arg.coerce_to_object()?;
             let has_routes = obj.has_named_property("routes")?;
             let has_fetch = obj.has_named_property("fetch")?;
             let has_port = obj.has_named_property("port")?;
@@ -431,7 +427,7 @@ pub fn serve(
 
     let mut out: Vec<Route> = Vec::new();
     if let Some(table) = real_routes {
-        let table: Object = unsafe { table.cast()? };
+        let table = table.coerce_to_object()?;
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
         for i in 0..len {
@@ -458,14 +454,14 @@ pub fn serve(
     config.address = address;
 
     let slot: ShutdownSlot = Arc::new(Mutex::new(None));
-    SHUTDOWN.get_or_init(|| slot.clone());
+    let slot_clone = slot.clone();
 
     let rocket = rocket::build()
         .configure(config)
         .mount("/", out)
         .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
             Box::pin(async move {
-                *slot.lock().unwrap() = Some(orbit.shutdown());
+                *slot_clone.lock().unwrap() = Some(orbit.shutdown());
             })
         }));
 
@@ -483,6 +479,7 @@ pub fn serve(
     Ok(Server {
         url,
         port: port as u32,
+        shutdown: slot,
     })
 }
 
@@ -500,16 +497,15 @@ pub struct ServeOptions {
 pub struct Server {
     pub url: String,
     pub port: u32,
+    shutdown: ShutdownSlot,
 }
 
 #[napi]
 impl Server {
     #[napi]
     pub fn stop(&self) -> napi::Result<()> {
-        if let Some(slot) = SHUTDOWN.get() {
-            if let Some(shutdown) = slot.lock().unwrap().take() {
-                shutdown.notify();
-            }
+        if let Some(shutdown) = self.shutdown.lock().unwrap().take() {
+            shutdown.notify();
         }
         Ok(())
     }
@@ -612,14 +608,14 @@ impl App {
         config.address = address;
 
         let slot: ShutdownSlot = Arc::new(Mutex::new(None));
-        SHUTDOWN.get_or_init(|| slot.clone());
+        let slot_clone = slot.clone();
 
         let rocket = rocket::build()
             .configure(config)
             .mount("/", out)
             .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
                 Box::pin(async move {
-                    *slot.lock().unwrap() = Some(orbit.shutdown());
+                    *slot_clone.lock().unwrap() = Some(orbit.shutdown());
                 })
             }));
 
@@ -637,6 +633,7 @@ impl App {
         Ok(Server {
             url,
             port: port as u32,
+            shutdown: slot,
         })
     }
 }
