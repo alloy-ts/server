@@ -6,6 +6,7 @@
 
 - **Bun / Alloy `serve` compatible API**: `Alloy.serve` and `Bun.serve` support routes, method maps, wildcards, redirects, and file markers.
 - **`App` class**: Express-like syntax (`new App().get(...)`) re-expressing Rocket macros (`#[get]`, `routes!`, `#[launch]`) at runtime.
+- **Rocket `Route` NAPI bindings**: Inspect and construct Rocket route metadata (`Route.ranked(rank, method, uri)`).
 - **Rocket `Config` NAPI bindings**: Direct JS access to Rocket configuration options (address, port, workers, limits, shutdown, TLS, etc.).
 - **TypeScript Codegen**: Generate typed client code and URI builders directly from route tables.
 
@@ -54,7 +55,18 @@ const server = app.launch({ port: 3000 });
 console.log(`Server running at ${server.url}`);
 ```
 
-### 3. Rocket Configuration
+### 3. Rocket `Route` Class
+
+```ts
+import { Route } from "@alloy-ts/server";
+
+const route = Route.ranked(2, "GET", "/route/<path..>?query");
+console.log(route.rank); // 2
+console.log(route.method); // "GET"
+console.log(route.uri); // "/route/<path..>?query"
+```
+
+### 4. Rocket Configuration
 
 ```ts
 import { Config, Alloy, response } from "@alloy-ts/server";
