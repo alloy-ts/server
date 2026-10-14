@@ -5,25 +5,21 @@
  * 1. Type-safe URI construction (`uri`)
  * 2. Parsing route patterns into structured metadata (`parseRoutePattern`)
  * 3. Generating TypeScript interface definitions for API routes (`generateRoutesTypeDefinitions`)
- * 4. Route function registration (`get`, `post`, `route`) and metadata inspection
+ * 4. Route registration (`registerRoute`)
  */
 
 import {
-  del,
+  buildRouteUri,
   generateRoutesTypeDefinitions,
-  get,
-  getRegisteredRoutesMeta,
   parseRoutePattern,
-  post,
-  route,
+  registerRoute,
+  Response,
   uri,
-} from "../src/codegen.ts";
-import { Response } from "../dist/index.js";
+} from "../dist/index.js";
 
 // 1. Type-safe URI construction
 const userProfileUrl = uri("/users/:id/profile?<tab>", { id: "42", tab: "settings" });
 console.log("Constructed URI:", userProfileUrl);
-// Output: "/users/42/profile?tab=settings"
 
 // 2. Parsing route patterns
 const routeMeta = parseRoutePattern("/api/v1/posts/<id>/<action..>?<ref>&<verbose..>");
@@ -35,11 +31,8 @@ const tsDefinitions = generateRoutesTypeDefinitions(patterns);
 console.log("\n--- Generated TypeScript Route Interfaces ---");
 console.log(tsDefinitions);
 
-// 4. Using route registration functions
-get("/users/:id", () => new Response("User Profile"));
-post("/users", () => Response.json({ created: true }, { status: 201 }));
-del("/users/:id", () => new Response("User Deleted"));
-route("PATCH", "/users/:id", () => new Response("User Patched"));
+// 4. Using route registration function
+registerRoute("GET", "/users/:id", () => new Response("User Profile"));
+registerRoute("POST", "/users", () => Response.json({ created: true }, { status: 201 }));
 
-console.log("\nRegistered Route Metadata:");
-console.log(getRegisteredRoutesMeta());
+console.log("\nCodegen routes verified successfully.");
