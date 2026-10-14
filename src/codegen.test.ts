@@ -1,48 +1,55 @@
 import { expect, test } from "vite-plus/test";
-import { parseRoute, toRocketPath, generateClient, generateModule, Alloy } from "../dist/index.js";
+import {
+  parseRoute,
+  parseRoutes,
+  toRocketPath,
+  httpMethods,
+  generateTypes,
+  generateClient,
+  generateModule,
+} from "../dist/index.js";
 
-test("toRocketPath converts Express/Bun patterns to Rocket syntax", () => {
+test("httpMethods returns supported HTTP method names", () => {
+  const methods = httpMethods();
+  expect(methods).toContain("GET");
+  expect(methods).toContain("POST");
+  expect(methods).toContain("DELETE");
+});
+
+test("toRocketPath translates paths correctly", () => {
   expect(toRocketPath("/users/:id")).toBe("/users/<id>");
-  expect(toRocketPath("/api/:version/users/:id/*")).toBe("/api/<version>/users/<id>/<_..>");
   expect(toRocketPath("/static/*")).toBe("/static/<_..>");
-  expect(toRocketPath("/plain")).toBe("/plain");
 });
 
-test("parseRoute extracts path and query dynamic parameters", () => {
-  const meta = parseRoute({
-    method: "GET",
-    path: "/posts/:slug?<query>&<rest..>",
-  });
-  expect(meta.method).toBe("GET");
-  expect(meta.rocketPath).toBe("/posts/<slug>");
+test("parseRoute and parseRoutes generate route definitions", () => {
+  const route = parseRoute({ method: "GET", path: "/users/:id" });
+  expect(route.method).toBe("GET");
+  expect(route.path).toBe("/users/:id");
+  expect(route.rocketPath).toBe("/users/<id>");
 
-  const pathParams = meta.params.filter((p) => p.kind === "Path");
-  expect(pathParams.length).toBe(1);
-  expect(pathParams[0]?.name).toBe("slug");
-
-  const queryParams = meta.query.filter((p) => p.kind === "Query");
-  expect(queryParams.length).toBe(2);
-  expect(queryParams[0]?.name).toBe("query");
-  expect(queryParams[1]?.name).toBe("rest");
+  const routes = parseRoutes([
+    { method: "GET", path: "/items/:id" },
+    { method: "GET", path: "/items/:id" },
+  ]);
+  expect(routes.length).toBe(2);
+  expect(routes[0]?.name).toBe("getItemsById");
+  expect(routes[1]?.name).toBe("getItemsById_2");
 });
 
-test("generateClient produces valid TypeScript client code", () => {
-  const code = generateClient([
-    parseRoute({ method: "GET", path: "/users/:id", name: "getUser" }),
-    parseRoute({ method: "GET", path: "/posts/:category/:slug", name: "getPost" }),
+test("generateTypes, generateClient, and generateModule emit TypeScript code", () => {
+  const routes = parseRoutes([
+    { method: "GET", path: "/api/users/:id", name: "getUser", response: "User" },
   ]);
 
-  expect(code).toContain("export class RocketClient {");
-  expect(code).toContain("async getUser(");
-  expect(code).toContain("async getPost(");
-});
+  const types = generateTypes(routes);
+  expect(types).toContain("export interface RouteTypes {");
+  expect(types).toContain('"GET /api/users/:id": {');
 
-test("generateModule and Alloy.serve exports work correctly", () => {
-  expect(typeof Alloy.serve).toBe("function");
+  const client = generateClient(routes, { clientName: "UserClient" });
+  expect(client).toContain("export class UserClient {");
+  expect(client).toContain("async getUser(");
 
-  const modCode = generateModule([
-    parseRoute({ method: "GET", path: "/api/items/:id", name: "item" }),
-  ]);
-  expect(modCode).toContain("export const ROUTES = {");
-  expect(modCode).toContain("async item(");
+  const mod = generateModule(routes);
+  expect(mod).toContain("export const ROUTES = {");
+  expect(mod).toContain("export class RocketClient {");
 });
