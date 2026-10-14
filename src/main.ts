@@ -98,6 +98,63 @@ export class Config {
   }
 }
 
+/**
+ * Route metadata mirror.
+ */
+export class Route {
+  name: string | null;
+  method: string;
+  uri: string;
+  rank: number;
+  format: string | null;
+
+  constructor(method: string, uri: string, name?: string | null) {
+    this.method = method.toUpperCase();
+    this.uri = uri;
+    this.name = name ?? null;
+    this.rank = computeDefaultRank(uri);
+    this.format = null;
+  }
+
+  static ranked(rank: number | null, method: string, uri: string, name?: string | null): Route {
+    const r = new Route(method, uri, name);
+    if (rank !== null) {
+      r.rank = rank;
+    }
+    return r;
+  }
+}
+
+function computeDefaultRank(uri: string): number {
+  const parts = uri.split("?");
+  const path = parts[0] ?? "/";
+  const query = parts[1];
+
+  const pathColor =
+    !path.includes("<") && !path.includes("*")
+      ? 0
+      : path.includes("<") && path.includes(">")
+        ? 1
+        : 2;
+  const queryColor = query === undefined ? 3 : !query.includes("<") ? 0 : 1;
+
+  const ranks: Record<string, number> = {
+    "0,0": -12,
+    "0,1": -11,
+    "0,2": -10,
+    "0,3": -9,
+    "1,0": -8,
+    "1,1": -7,
+    "1,2": -6,
+    "1,3": -5,
+    "2,0": -4,
+    "2,1": -3,
+    "2,2": -2,
+  };
+
+  return ranks[`${pathColor},${queryColor}`] ?? -1;
+}
+
 export function main() {
   return "Hello, world!";
 }
