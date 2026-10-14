@@ -1,6 +1,6 @@
 # Alloy Rocket Server — User Manual
 
-Node.js (TypeScript) NAPI bindings for the [Rocket web framework](https://rocket.rs/). High-performance HTTP routing, server lifecycle control, Figment configuration management, and automated TypeScript client/type code generation.
+Node.js (TypeScript) NAPI bindings for the [Rocket web framework](https://rocket.rs/). High-performance HTTP routing, server lifecycle control, Figment configuration management, custom `Handler` trait abstractions, and automated TypeScript client/type code generation.
 
 ---
 
@@ -92,6 +92,35 @@ app
 
 const server = app.launch();
 console.log(`App running at ${server.url}`);
+```
+
+---
+
+## Handler Bindings (`Handler` & Outcomes)
+
+For custom library-based or plugin mechanism route handlers (mirroring Rocket's `Handler` trait), `@alloy-ts/server` exposes `Handler` and outcome constructors:
+
+```ts
+import {
+  Handler,
+  HandlerOutcomeKind,
+  createHandlerOutcomeSuccess,
+  createHandlerOutcomeError,
+  createHandlerOutcomeForward,
+} from "@alloy-ts/server";
+
+// Create custom handler wrapper
+const customHandler = new Handler("CustomKindHandler", async (req) => {
+  if (req.uri === "/special") {
+    return createHandlerOutcomeSuccess(200, "Special content", [["X-Custom", "true"]]);
+  } else if (req.uri === "/forbidden") {
+    return createHandlerOutcomeError(403);
+  } else {
+    return createHandlerOutcomeForward(null);
+  }
+});
+
+console.log(`Handler initialized: ${customHandler.name}`);
 ```
 
 ---
