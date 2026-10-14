@@ -1,4 +1,4 @@
-import { Alloy, Response } from "../src/main.ts";
+import { serve, Response } from "../dist/index.js";
 
 interface Todo {
   id: string;
@@ -11,7 +11,7 @@ const todos: Map<string, Todo> = new Map();
 // Seed initial item
 todos.set("1", { id: "1", title: "Implement Rocket NAPI Bindings", completed: true });
 
-const server = Alloy.serve({
+const server = serve({
   port: 8080,
   routes: {
     // List all items or create new item

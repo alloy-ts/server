@@ -1,4 +1,9 @@
-import { generateRoutesManifest, buildUri, RouteMetadata, CatcherMetadata } from "../src/main.ts";
+import {
+  generateRoutesManifest,
+  buildUri,
+  type RouteMetadata,
+  type CatcherMetadata,
+} from "../dist/index.js";
 
 // 1. Declare route metadata matching Rocket procedural macros
 const routes: RouteMetadata[] = [

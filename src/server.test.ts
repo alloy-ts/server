@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { serve, Response, Config } from "./main.ts";
+import { serve, Response, Config } from "../dist/index.js";
 
 test("server response methods", () => {
   const resp = new Response("hello world", { status: 200 });

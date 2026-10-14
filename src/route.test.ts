@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Route } from "./main.ts";
+import { Route } from "../dist/index.js";
 
 test("Route computes default rank correctly", () => {
   const route = new Route("GET", "/foo/bar", "index", "json");

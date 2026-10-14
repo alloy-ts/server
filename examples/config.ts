@@ -1,4 +1,4 @@
-import { Config, Limits, Shutdown, Alloy, Response } from "../src/main.ts";
+import { Config, Limits, Shutdown, serve, Response } from "../dist/index.js";
 
 // 1. Create a custom configuration using Figment defaults
 const config = Config.debugDefault();
@@ -28,7 +28,7 @@ console.log(`Server Ident: ${config.ident}`);
 console.log(`JSON Limit: ${config.limits.json} bytes`);
 
 // 4. Start server using configured options
-const server = Alloy.serve({
+const server = serve({
   port: config.port,
   hostname: config.address,
   routes: {

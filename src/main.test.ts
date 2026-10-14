@@ -1,7 +1,5 @@
 import { expect, test } from "vite-plus/test";
 import {
-  main,
-  Alloy,
   Response,
   Config,
   Route,
@@ -10,11 +8,8 @@ import {
   createHandlerOutcomeForward,
   buildUri,
   generateRoutesManifest,
-} from "./main.ts";
-
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
-});
+  serve,
+} from "../dist/index.js";
 
 test("Response class constructs and serializes correctly", () => {
   const resp = new Response("hello world", { status: 200 });
@@ -84,9 +79,9 @@ test("Config exposes default options", () => {
   expect(config.address).toBeDefined();
 });
 
-test("Alloy.serve launches a Rocket web server and responds to HTTP requests", async () => {
+test("serve launches a Rocket web server and responds to HTTP requests", async () => {
   const port = 3000 + Math.floor(Math.random() * 5000);
-  const server = Alloy.serve({
+  const server = serve({
     port,
     hostname: "127.0.0.1",
     routes: {

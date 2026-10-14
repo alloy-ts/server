@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Config, DEBUG_PROFILE, RELEASE_PROFILE, PORT, ADDRESS } from "./main.ts";
+import { Config, DEBUG_PROFILE, RELEASE_PROFILE, PORT, ADDRESS } from "../dist/index.js";
 
 test("Config constants match expected names", () => {
   expect(DEBUG_PROFILE).toBe("debug");

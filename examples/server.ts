@@ -1,11 +1,11 @@
-import { Alloy, Response } from "../src/main.ts";
+import { serve, file, Response } from "../dist/index.js";
 
 // Simulated HTML import asset manifest (e.g., imported index.html)
 const myReactSinglePageApp = {
   html: "<!DOCTYPE html><html><body><h1>React SPA</h1></body></html>",
 };
 
-const server = Alloy.serve({
+const server = serve({
   port: Number(process.env.PORT || 3000),
   hostname: "127.0.0.1",
 
@@ -34,7 +34,7 @@ const server = Alloy.serve({
     "/blog/hello": Response.redirect("/blog/hello/world"),
 
     // 6. Serve a file by lazily loading it from disk
-    "/favicon.ico": Alloy.file("./favicon.ico"),
+    "/favicon.ico": file("./favicon.ico"),
 
     // 7. HTML imports / single page app entrypoint
     "/": myReactSinglePageApp,

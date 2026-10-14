@@ -3,7 +3,7 @@ import {
   createHandlerOutcomeSuccess,
   createHandlerOutcomeError,
   createHandlerOutcomeForward,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("createHandlerOutcomeSuccess constructs success outcome", () => {
   const success = createHandlerOutcomeSuccess("hello", 200);
