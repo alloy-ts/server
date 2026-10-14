@@ -109,14 +109,16 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
 
     let mut params = HashMap::new();
     if let Some(route) = req.route() {
-        for (i, segment) in route.uri.path().split('/').enumerate() {
+        let mut param_idx = 0;
+        for segment in route.uri.path().split('/') {
             if let Some(inner) = segment.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
                 let name = inner.strip_suffix("..").unwrap_or(inner);
                 if name != "_" {
-                    if let Some(Ok(value)) = req.param::<&str>(i) {
+                    if let Some(Ok(value)) = req.param::<&str>(param_idx) {
                         params.insert(name.to_string(), value.to_string());
                     }
                 }
+                param_idx += 1;
             }
         }
     }
