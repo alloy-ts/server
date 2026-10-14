@@ -1,6 +1,6 @@
 export * from "./dist/index.d.ts";
 
-import { Server, Response } from "./dist/index.d.ts";
+import { Server, Response, Catcher } from "./dist/index.d.ts";
 
 export interface AppOptions {
   port?: number;
@@ -50,6 +50,7 @@ declare const Alloy: {
   response: (body?: string | null, options?: any) => Response;
   Response: typeof Response;
   Config: any;
+  Catcher: typeof Catcher;
   App: typeof App;
   uri: typeof uri;
   routes: typeof routes;

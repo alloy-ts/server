@@ -23,6 +23,17 @@ use rocket::{Data, Shutdown};
 type HandlerTsfn =
     ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, RequestInput, Status, true, false, 0>;
 
+static RUNTIME: OnceLock<rocket::tokio::runtime::Runtime> = OnceLock::new();
+
+fn runtime() -> &'static rocket::tokio::runtime::Runtime {
+    RUNTIME.get_or_init(|| {
+        rocket::tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create Tokio runtime")
+    })
+}
+
 #[allow(deprecated)]
 fn safe_to_js_function(value: &Unknown) -> napi::Result<JsFunction> {
     if value.get_type()? != ValueType::Function {
@@ -425,7 +436,7 @@ pub fn serve(options: Unknown) -> napi::Result<Server> {
 
     let rocket = rocket::build().configure(config).mount("/", routes);
 
-    rocket::tokio::spawn(async move {
+    runtime().spawn(async move {
         if let Ok(ignited) = rocket.ignite().await {
             let shutdown = ignited.shutdown();
             *SHUTDOWN.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(shutdown);

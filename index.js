@@ -39,7 +39,6 @@ export class App {
       this.routesTable[path] = {};
     }
     this.routesTable[path][method.toUpperCase()] = handler;
-    native.registerRoute(method, path, handler);
     return this;
   }
 

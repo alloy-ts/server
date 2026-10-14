@@ -2,6 +2,7 @@
 
 use napi_derive::napi;
 
+use rocket::http::uri::Origin;
 use rocket::http::Method;
 use rocket::route::dummy_handler;
 use rocket::route::Route as RocketRoute;
@@ -25,6 +26,13 @@ impl Route {
             .parse()
             .map_err(|_| napi::Error::new(napi::Status::GenericFailure, format!("invalid method: {method}")))?;
 
+        if Origin::parse_route(&uri).is_err() {
+            return Err(napi::Error::new(
+                napi::Status::InvalidArg,
+                format!("invalid route URI: {uri}"),
+            ));
+        }
+
         let rocket_route = RocketRoute::new(m, &uri, dummy_handler);
         Ok(Route {
             name: rocket_route.name.map(|n| n.to_string()),
@@ -41,6 +49,13 @@ impl Route {
         let m: Method = method
             .parse()
             .map_err(|_| napi::Error::new(napi::Status::GenericFailure, format!("invalid method: {method}")))?;
+
+        if Origin::parse_route(&uri).is_err() {
+            return Err(napi::Error::new(
+                napi::Status::InvalidArg,
+                format!("invalid route URI: {uri}"),
+            ));
+        }
 
         let rank_isize = rank.map(|r| r as isize);
         let rocket_route = RocketRoute::ranked(rank_isize, m, &uri, dummy_handler);
