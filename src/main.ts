@@ -137,6 +137,61 @@ export const Rocket = native.Rocket;
 export const launch = native.launch;
 export const rocketMain = native.rocketMain;
 
+export function response(body: string | Buffer | object, status = 200) {
+  if (typeof body === "object" && !(body instanceof Buffer)) {
+    return Response.json(body, { status });
+  }
+  return new Response(typeof body === "string" ? body : (body as Buffer).toString("utf-8"), {
+    status,
+  });
+}
+
+export class App {
+  private rocket: any;
+
+  constructor(config?: RocketConfig) {
+    this.rocket = new Rocket(config ?? null);
+  }
+
+  public get(path: string, handler: any): this {
+    return this.route("GET", path, handler);
+  }
+
+  public post(path: string, handler: any): this {
+    return this.route("POST", path, handler);
+  }
+
+  public put(path: string, handler: any): this {
+    return this.route("PUT", path, handler);
+  }
+
+  public delete(path: string, handler: any): this {
+    return this.route("DELETE", path, handler);
+  }
+
+  public route(method: string, path: string, handler: any): this {
+    const wrapped =
+      typeof handler === "function" ? (err: any, req: any) => handler(req || err) : handler;
+    this.rocket.mount("/", method, path, wrapped);
+    return this;
+  }
+
+  public catch(code: number | undefined, handler: any): this {
+    const wrapped =
+      typeof handler === "function" ? (err: any, req: any) => handler(req || err) : handler;
+    this.rocket.register("/", code ?? null, wrapped);
+    return this;
+  }
+
+  public async launch(): Promise<void> {
+    return this.rocket.launch();
+  }
+
+  public shutdown(): void {
+    return this.rocket.shutdown();
+  }
+}
+
 export const generateRoute = native.generateRoute;
 export const generateRoutes = native.generateRoutes;
 export const generateCatcher = native.generateCatcher;
@@ -213,8 +268,10 @@ export const Alloy = {
   serve,
   file,
   Response,
+  response,
   Config,
   Rocket,
+  App,
   launch,
   rocketMain,
   codegen,
