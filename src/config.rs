@@ -185,6 +185,7 @@ fn build_shutdown(napi: &Shutdown) -> napi::Result<RocketShutdownAlias> {
 // ---------------------------------------------------------------------------
 
 #[napi]
+#[derive(Clone)]
 pub struct Config {
     profile: Option<String>,
     address: String,

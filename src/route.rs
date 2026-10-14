@@ -13,6 +13,7 @@ use rocket::Route as RocketRoute;
 
 /// A request-handling Rocket route metadata object.
 #[napi]
+#[derive(Clone)]
 pub struct Route {
     pub name: Option<String>,
     pub method: String,

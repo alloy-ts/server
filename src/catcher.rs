@@ -13,6 +13,7 @@ use crate::handler::Handler;
 
 /// An error-catching Rocket route NAPI wrapper.
 #[napi]
+#[derive(Clone)]
 pub struct Catcher {
     pub name: Option<String>,
     pub base: String,
