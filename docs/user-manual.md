@@ -9,28 +9,28 @@
 Start a high-performance HTTP server with Bun/Alloy-style routing backed by Rocket:
 
 ```ts
-import { Alloy, Response, file } from "@alloy-ts/server";
+import { serve, response, responseJson, responseRedirect, file } from "@alloy-ts/server";
 
-const server = Alloy.serve({
+const server = serve({
   port: 3000,
   routes: {
     // Static response
-    "/api/status": new Response("OK"),
+    "/api/status": response("OK"),
 
     // Dynamic path parameters
-    "/users/:id": (req) => new Response(`Hello User ${req.params?.id}!`),
+    "/users/:id": (req) => response(`Hello User ${req.params?.id}!`),
 
     // Per-HTTP method map
     "/api/posts": {
-      GET: () => new Response("List posts"),
-      POST: async (req) => Response.json({ created: true }),
+      GET: () => response("List posts"),
+      POST: async (req) => responseJson({ created: true }),
     },
 
     // Wildcard route
-    "/api/*": Response.json({ message: "Not found" }, { status: 404 }),
+    "/api/*": responseJson({ message: "Not found" }, { status: 404 }),
 
     // Redirect
-    "/blog/hello": Response.redirect("/blog/hello/world"),
+    "/blog/hello": responseRedirect("/blog/hello/world"),
 
     // Lazy file serving
     "/favicon.ico": file("./favicon.ico"),
@@ -38,7 +38,7 @@ const server = Alloy.serve({
 
   // Fallback handler for unmatched paths
   fetch(req) {
-    return new Response("Not Found", { status: 404 });
+    return response("Not Found", { status: 404 });
   },
 });
 
@@ -113,7 +113,7 @@ cfg.ident = null; // Disable Server response header
 
 ---
 
-## 4. Route and Handler Bindings
+## 4. Route, RouteUri, and Handler Bindings
 
 ### Route (`Route`)
 
@@ -127,6 +127,19 @@ console.log(route.rank); // Default computed rank (-9)
 
 const ranked = Route.ranked(2, "POST", "/submit");
 console.log(ranked.rank); // Explicit rank (2)
+```
+
+### RouteUri (`RouteUri`)
+
+Exposes parsed base mount point, path, query, and default rank metadata:
+
+```ts
+import { RouteUri } from "@alloy-ts/server";
+
+const uri = new RouteUri("/base", "/foo/bar?a=1");
+console.log(uri.base); // "/base"
+console.log(uri.path); // "/base/foo/bar"
+console.log(uri.query); // "a=1"
 ```
 
 ### Handler Outcomes
@@ -148,9 +161,11 @@ const fwd = outcomeForward(404);
 Extract route definitions and emit client SDKs:
 
 ```ts
-import { parseRoutes, generateClient } from "@alloy-ts/server";
+import { parseRoutes, generateModule } from "@alloy-ts/server";
 
-const defs = parseRoutes([{ method: "GET", path: "/users/:id", response: "User" }]);
+const defs = parseRoutes([
+  { method: "GET", path: "/users/:id", response: "User" },
+]);
 
-const sdkCode = generateClient(defs, { clientName: "UserApiClient" });
+const sdkCode = generateModule(defs);
 ```

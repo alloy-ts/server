@@ -578,3 +578,117 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     push_kind(RouteKind::Fn(Arc::new(tsfn)), &path, &[m], &mut routes);
     Ok(())
 }
+
+/// Express/Rocket app builder class for dynamic route registration.
+#[napi]
+pub struct App {
+    routes: Vec<(String, String, Unknown<'static>)>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self { routes: Vec::new() }
+    }
+
+    #[napi]
+    pub fn get<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("GET".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn post<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("POST".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn put<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("PUT".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn delete<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("DELETE".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn patch<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("PATCH".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn head<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("HEAD".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn options<'env>(&mut self, path: String, handler: Unknown<'env>) {
+        self.route("OPTIONS".to_string(), path, handler);
+    }
+
+    #[napi]
+    pub fn route<'env>(&mut self, method: String, path: String, handler: Unknown<'env>) {
+        let handler_static: Unknown<'static> = unsafe { std::mem::transmute(handler) };
+        self.routes.push((method.to_ascii_uppercase(), path, handler_static));
+    }
+
+    #[napi]
+    pub fn launch(&mut self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let mut out: Vec<Route> = Vec::new();
+        for (method, pattern, handler) in self.routes.drain(..) {
+            let m: Method = method
+                .parse()
+                .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+            mount_value(handler, &pattern, &[m], &mut out)?;
+        }
+
+        let options = options.unwrap_or_else(|| ServeOptions {
+            port: None,
+            hostname: None,
+            unix: None,
+        });
+        let port = options.port.unwrap_or(3000) as u16;
+        let hostname = options
+            .hostname
+            .clone()
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let address: IpAddr = match hostname.as_str() {
+            "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            other => other.parse().unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+        let url = format!("http://{}:{}", hostname, port);
+
+        let mut config = Config::default();
+        config.port = port;
+        config.address = address;
+
+        let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+        SHUTDOWN.get_or_init(|| slot.clone());
+
+        let rocket = rocket::build()
+            .configure(config)
+            .mount("/", out)
+            .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+                Box::pin(async move {
+                    *slot.lock().unwrap() = Some(orbit.shutdown());
+                })
+            }));
+
+        std::thread::spawn(move || {
+            if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(async move {
+                    let _ = rocket.launch().await;
+                });
+            }
+        });
+
+        Ok(Server {
+            url,
+            port: port as u32,
+        })
+    }
+}

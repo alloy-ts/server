@@ -18,8 +18,11 @@ import {
   LOG_LEVEL,
   SHUTDOWN,
   CLI_COLORS,
-} from "./config.ts";
-import { Route, outcomeSuccess, outcomeError, outcomeForward } from "./main.ts";
+  Route,
+  outcomeSuccess,
+  outcomeError,
+  outcomeForward,
+} from "../dist/index.js";
 
 test("Config associated constants and parameter names", () => {
   expect(DEBUG_PROFILE).toBe("debug");

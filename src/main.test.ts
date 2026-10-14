@@ -1,6 +1,9 @@
 import { expect, test } from "vite-plus/test";
-import { main } from "./main.ts";
+import { serve, response, Config, Route } from "../dist/index.js";
 
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
+test("NAPI exports serve, response, Config, Route", () => {
+  expect(typeof serve).toBe("function");
+  expect(typeof response).toBe("function");
+  expect(typeof Config).toBe("function");
+  expect(typeof Route).toBe("function");
 });
