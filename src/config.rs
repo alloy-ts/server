@@ -267,6 +267,7 @@ impl Config {
     // -- runtime helpers --------------------------------------------------
 
     /// Returns the underlying `rocket::Config` built from the current fields.
+    #[allow(dead_code)]
     pub(crate) fn build(&self) -> napi::Result<RocketConfig> {
         let mut cfg = RocketConfig::default();
         if let Some(p) = &self.profile {

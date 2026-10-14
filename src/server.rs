@@ -64,6 +64,7 @@ pub struct ResponseInit {
 }
 
 /// The `Response` value a JS handler returns.
+#[derive(Clone)]
 #[napi(object)]
 pub struct Response {
     pub status: u32,
@@ -118,6 +119,7 @@ pub fn response_redirect(url: String, status: Option<u32>) -> Response {
 }
 
 /// Lazily-served static file marker returned by [`file`].
+#[derive(Clone)]
 #[napi(object)]
 pub struct StaticFile {
     pub path: String,
@@ -204,12 +206,15 @@ async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> 
 }
 
 fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
-    let p_segs: Vec<&str> = pattern
+    let clean_pattern = pattern.split('?').next().unwrap_or(pattern);
+    let clean_path = path.split('?').next().unwrap_or(path);
+
+    let p_segs: Vec<&str> = clean_pattern
         .trim_start_matches('/')
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
-    let a_segs: Vec<&str> = path
+    let a_segs: Vec<&str> = clean_path
         .trim_start_matches('/')
         .split('/')
         .filter(|s| !s.is_empty())
@@ -303,18 +308,30 @@ fn mount_value<'env>(
         }
         ValueType::Object => {
             let v = value.clone();
-            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
-                push_kind(
-                    RouteKind::File {
-                        path: fr.path,
-                    },
-                    pattern,
-                    methods,
-                    out,
-                );
-            } else if let Ok(resp) = unsafe { v.clone().cast::<Response>() } {
-                push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
-            } else if let Ok(obj) = unsafe { v.cast::<Object>() } {
+            if let Ok(obj) = unsafe { v.cast::<Object>() } {
+                if obj.has_named_property("path")? && !obj.has_named_property("status")? {
+                    if let Ok(path) = obj.get_named_property::<String>("path") {
+                        push_kind(
+                            RouteKind::File { path },
+                            pattern,
+                            methods,
+                            out,
+                        );
+                        return Ok(());
+                    }
+                }
+                if obj.has_named_property("status")? {
+                    let status = obj.get_named_property::<u32>("status")?;
+                    let headers = obj.get_named_property::<HashMap<String, String>>("headers").unwrap_or_default();
+                    let body = obj.get_named_property::<Option<Vec<u8>>>("body").unwrap_or(None);
+                    push_kind(
+                        RouteKind::Static(Arc::new(Response { status, headers, body })),
+                        pattern,
+                        methods,
+                        out,
+                    );
+                    return Ok(());
+                }
                 let names = obj.get_property_names()?;
                 let len = names.get_array_length_unchecked()?;
                 for i in 0..len {
