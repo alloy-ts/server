@@ -82,6 +82,7 @@ fn to_js_function(handler: Unknown) -> JsFunction {
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
 /// Rocket's generated route handler would have extracted before calling the user
 /// fn. `params` carries any `:name` / `<name>` path segments.
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct RequestInput {
     pub method: String,
@@ -93,6 +94,7 @@ pub struct RequestInput {
 }
 
 /// Init passed to the `Response` constructors / helpers.
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct ResponseInit {
     pub status: Option<u32>,
@@ -103,6 +105,7 @@ pub struct ResponseInit {
 /// (see the module docs for why it is not a class) carrying the same `status` /
 /// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
 /// produce.
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct Response {
     pub status: u32,
@@ -157,6 +160,7 @@ pub fn response_redirect(url: String, status: Option<u32>) -> Response {
 }
 
 /// Lazily-served static file marker returned by [`file`].
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct StaticFile {
     pub path: String,

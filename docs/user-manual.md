@@ -51,10 +51,10 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
-## 2. Rocket Route & Ranking (`Route`)
+## 2. Rocket Route, Ranking & Outcomes (`Route`, `HandlerOutcome`)
 
 ```ts
-import { Route, computeDefaultRank } from "@alloy-ts/server";
+import { Route, computeDefaultRank, createSuccessOutcome, response } from "@alloy-ts/server";
 
 // Compute default rank based on URI specificity
 const rank = computeDefaultRank("/foo/<id>?query"); // -8 (partial path, static query)
@@ -64,9 +64,9 @@ const route = new Route("GET", "/route/<path..>?query", "route_name", "json");
 console.log(route.rank); // -8
 console.log(route.method); // "GET"
 
-// Explicitly ranked route
-const customRoute = Route.ranked(2, "POST", "/submit");
-console.log(customRoute.rank); // 2
+// Custom handler outcome
+const outcome = createSuccessOutcome(response("Success"));
+console.log(outcome.kind); // "success"
 ```
 
 ---
