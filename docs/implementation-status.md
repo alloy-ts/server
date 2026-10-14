@@ -11,6 +11,9 @@ This document outlines the current implementation state of `@alloy-ts/server` (N
 | **Server Lifecycle (`Alloy.serve`)**    | ✅ **Complete** | Starts Rocket on Tokio runtime; supports `url`, `port`, and graceful `stop()`.                               |
 | **Static & Dynamic Routing**            | ✅ **Complete** | Supports static paths, `:param`, `<param>`, `<param..>` dynamic parameters, and wildcard `/api/*` routes.    |
 | **Route Structure (`Route`)**           | ✅ **Complete** | NAPI class exposing `name`, `method`, `uri`, `rank`, `format`, computed default ranking, and custom ranking. |
+| **Route URI Structure (`RouteUri`)**    | ✅ **Complete** | NAPI class exposing `base`, `unmountedOrigin`, `origin`, `path`, and `query`.                                |
+| **Catcher Structure (`Catcher`)**       | ✅ **Complete** | NAPI class exposing `code`, `name`, `base`, and base path remapping via `mapBase`.                           |
+| **Fairing Info & Kind (`FairingInfo`)** | ✅ **Complete** | `FairingInfo` and `FairingKind` struct definitions and `createFairingInfo` helper.                           |
 | **Handler Outcomes (`HandlerOutcome`)** | ✅ **Complete** | Helpers `createHandlerOutcomeSuccess`, `createHandlerOutcomeError`, and `createHandlerOutcomeForward`.       |
 | **Per-Method Handlers**                 | ✅ **Complete** | Accepts `{ GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS }` route maps.                                       |
 | **Response Helpers**                    | ✅ **Complete** | `Response.json()`, `Response.redirect()`, `Response` status and headers getters/setters.                     |
@@ -21,7 +24,7 @@ This document outlines the current implementation state of `@alloy-ts/server` (N
 | **Configuration (`Config`)**            | ✅ **Complete** | Figment provider integration with `Limits`, `Shutdown`, `TlsConfig`, `MutualTls`.                            |
 | **Codegen Helpers**                     | ✅ **Complete** | `generate_routes_manifest` and type-safe `build_uri` parameter interpolator.                                 |
 | **Managed State (`State<T>`)**          |  ⏳ _Planned_   | Injecting shared server state into JS request handler contexts (`req.state`).                                |
-| **Fairings & Middleware**               |  ⏳ _Planned_   | TS callbacks for Rocket `on_request` and `on_response` fairing hooks.                                        |
+| **Fairings & Middleware Execution**     |  ⏳ _Planned_   | Invoking TS callbacks for Rocket `on_request` and `on_response` fairing hooks during HTTP requests.          |
 | **Multipart Form Parsing**              |  ⏳ _Planned_   | Streaming form/multipart body parsing into structured JS objects.                                            |
 | **WebSockets / Upgrade**                |  ⏳ _Planned_   | Upgrading HTTP connections to WebSocket streams.                                                             |
 
