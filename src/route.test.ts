@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Route } from "./main.ts";
+import { Route } from "../dist/index.js";
 
 test("Route constructor creates new route with default rank", () => {
   const index = new Route("GET", "/");

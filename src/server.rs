@@ -557,6 +557,164 @@ impl Server {
     }
 }
 
+/// Programmatic builder for a Rocket server.
+#[napi]
+pub struct App {
+    routes: Arc<Mutex<Vec<Route>>>,
+    server: Arc<Mutex<Option<Server>>>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self {
+            routes: Arc::new(Mutex::new(Vec::new())),
+            server: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn get(&self, path: String, handler: Unknown) -> napi::Result<&Self> {
+        self.route("GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn post(&self, path: String, handler: Unknown) -> napi::Result<&Self> {
+        self.route("POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn put(&self, path: String, handler: Unknown) -> napi::Result<&Self> {
+        self.route("PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn delete(&self, path: String, handler: Unknown) -> napi::Result<&Self> {
+        self.route("DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn patch(&self, path: String, handler: Unknown) -> napi::Result<&Self> {
+        self.route("PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    #[allow(deprecated)]
+    pub fn route(&self, method: String, path: String, handler: Unknown) -> napi::Result<&Self> {
+        let m: Method = method
+            .parse()
+            .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+        let mut routes = self.routes.lock().unwrap();
+        mount_value(handler, &path, &[m], &mut routes)?;
+        Ok(self)
+    }
+
+    #[napi]
+    pub fn launch(&self, options: Option<ServeOptions>) -> napi::Result<Server> {
+        let mut app_routes = {
+            let mut guard = self.routes.lock().unwrap();
+            std::mem::take(&mut *guard)
+        };
+        {
+            let reg_routes = routes().lock().unwrap();
+            app_routes.extend(reg_routes.clone());
+        }
+        let server = serve_rocket_routes(app_routes, options)?;
+        *self.server.lock().unwrap() = Some(Server {
+            url: server.url.clone(),
+            port: server.port,
+        });
+        Ok(server)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        let mut guard = self.server.lock().unwrap();
+        if let Some(server) = guard.take() {
+            server.stop()?;
+        }
+        Ok(())
+    }
+}
+
+fn serve_rocket_routes(routes: Vec<Route>, options: Option<ServeOptions>) -> napi::Result<Server> {
+    let options = options.unwrap_or_else(|| ServeOptions {
+        port: None,
+        hostname: None,
+        unix: None,
+    });
+    let env_port = std::env::var("BUN_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .or_else(|_| std::env::var("NODE_PORT"))
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok());
+
+    let port = options.port.map(|p| p as u16).or(env_port).unwrap_or(3000);
+    let hostname = options
+        .hostname
+        .clone()
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+    let address: IpAddr = match hostname.as_str() {
+        "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        other => other
+            .parse()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+    };
+    let url = if let Some(ref unix_path) = options.unix {
+        format!("unix:{}", unix_path)
+    } else {
+        format!("http://{}:{}", hostname, port)
+    };
+
+    let mut config = Config::default();
+    config.port = port;
+    config.address = address;
+
+    let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+    SHUTDOWN.get_or_init(|| slot.clone());
+
+    let rocket = rocket::build()
+        .configure(config)
+        .mount("/", routes)
+        .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+            Box::pin(async move {
+                *slot.lock().unwrap() = Some(orbit.shutdown());
+            })
+        }));
+
+    std::thread::spawn(move || {
+        if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            rt.block_on(async move {
+                let _ = rocket.launch().await;
+            });
+        }
+    });
+
+    Ok(Server {
+        url,
+        port: port as u32,
+    })
+}
+
+#[napi]
+pub fn launch(options: Option<ServeOptions>) -> napi::Result<Server> {
+    let mut reg_routes = Vec::new();
+    {
+        let guard = routes().lock().unwrap();
+        reg_routes.extend(guard.clone());
+    }
+    serve_rocket_routes(reg_routes, options)
+}
+
 // ---------------------------------------------------------------------------
 // Low-level registry API: `register_route` for the codegen/decorator path that
 // builds routes one-at-a-time before booting.
