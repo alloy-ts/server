@@ -111,9 +111,9 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
         .route()
         .map(|route| {
             route
+                .uri
                 .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
+                .filter_map(|name| req.param::<&str>(name).ok().map(|v| (name.to_string(), v.to_string())))
                 .collect()
         })
         .unwrap_or_default();
