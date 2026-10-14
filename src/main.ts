@@ -137,6 +137,7 @@ export const Alloy = {
   file: native.file,
   Response,
   App,
+  Route: native.Route,
 };
 
 export const Bun = Alloy;

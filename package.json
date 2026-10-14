@@ -4,10 +4,12 @@
   "files": [
     "./dist/index.js",
     "./dist/index.d.ts",
+    "./dist/main.mjs",
+    "./dist/main.d.mts",
     "./dist/*.node"
   ],
   "type": "module",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/main.d.mts",
   "exports": {
     ".": "./dist/main.mjs",
     "./package.json": "./package.json"
