@@ -7,6 +7,7 @@ import {
   generateRoutesTypeDefinitions,
   get,
   getRegisteredRoutesMeta,
+  Handler,
   main,
   parseRoutePattern,
   post,
@@ -51,6 +52,24 @@ test("RouteMetadata class", () => {
     expect(rankedRoute.method).toBe("POST");
     expect(rankedRoute.uri).toBe("/posts");
     expect(rankedRoute.rank).toBe(2);
+  }
+});
+
+test("Handler NAPI wrapper", () => {
+  if (Handler) {
+    const handler = new Handler("custom_handler");
+    expect(handler.name).toBe("custom_handler");
+
+    const succOutcome = Handler.success({ status: 200, headers: [] });
+    expect(succOutcome.status).toBe(200);
+    expect(succOutcome.isForward).toBe(false);
+
+    const errOutcome = Handler.error(500);
+    expect(errOutcome.status).toBe(500);
+
+    const fwdOutcome = Handler.forward(404);
+    expect(fwdOutcome.status).toBe(404);
+    expect(fwdOutcome.isForward).toBe(true);
   }
 });
 

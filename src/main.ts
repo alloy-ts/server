@@ -177,6 +177,7 @@ export const registerRoute = (method: string, path: string, handler: any) => {
 export const Config = native.Config;
 export const Server = native.Server;
 export const RouteMetadata = native.Route;
+export const Handler = native.Handler;
 
 // ---------------------------------------------------------------------------
 // App Builder Abstraction
@@ -483,6 +484,7 @@ export const Alloy = {
   Config,
   Server,
   RouteMetadata,
+  Handler,
   App,
   Route,
   Get,
