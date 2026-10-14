@@ -589,6 +589,128 @@ impl Server {
     }
 }
 
+/// Fluent Rocket application builder class (`App`).
+#[napi]
+pub struct App {
+    options: Option<ServeOptions>,
+    routes: Vec<Route>,
+    server: Option<Server>,
+}
+
+#[napi]
+impl App {
+    #[napi(constructor)]
+    pub fn new(options: Option<ServeOptions>) -> Self {
+        Self {
+            options,
+            routes: Vec::new(),
+            server: None,
+        }
+    }
+
+    #[napi]
+    pub fn get(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("GET".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn post(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("POST".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn put(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("PUT".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn delete(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("DELETE".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn patch(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("PATCH".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn head(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("HEAD".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn options(&mut self, path: String, handler: Unknown) -> napi::Result<()> {
+        self.route("OPTIONS".to_string(), path, handler)
+    }
+
+    #[napi]
+    pub fn route(&mut self, method: String, path: String, handler: Unknown) -> napi::Result<()> {
+        let m: Method = method
+            .parse()
+            .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
+        mount_value(handler, &path, &[m], &mut self.routes)?;
+        Ok(())
+    }
+
+    #[napi]
+    pub fn launch(&mut self) -> napi::Result<Server> {
+        let port = self.options.as_ref().and_then(|o| o.port).unwrap_or(3000) as u16;
+        let hostname = self.options.as_ref().and_then(|o| o.hostname.clone()).unwrap_or_else(|| "0.0.0.0".to_string());
+        let address: IpAddr = match hostname.as_str() {
+            "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            other => other.parse().unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+        let url = format!("http://{}:{}", hostname, port);
+
+        let mut config = Config::default();
+        config.port = port;
+        config.address = address;
+
+        let slot: ShutdownSlot = Arc::new(Mutex::new(None));
+        SHUTDOWN.get_or_init(|| slot.clone());
+
+        let routes = std::mem::take(&mut self.routes);
+        let rocket = rocket::build()
+            .configure(config)
+            .mount("/", routes)
+            .attach(AdHoc::on_liftoff("capture-shutdown", move |orbit| {
+                Box::pin(async move {
+                    *slot.lock().unwrap() = Some(orbit.shutdown());
+                })
+            }));
+
+        std::thread::spawn(move || {
+            if let Ok(rt) = rocket::tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(async move {
+                    let _ = rocket.launch().await;
+                });
+            }
+        });
+
+        let server = Server {
+            url,
+            port: port as u32,
+        };
+        self.server = Some(Server {
+            url: server.url.clone(),
+            port: server.port,
+        });
+
+        Ok(server)
+    }
+
+    #[napi]
+    pub fn stop(&self) -> napi::Result<()> {
+        if let Some(ref server) = self.server {
+            server.stop()?;
+        }
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Low-level registry API: `register_route` for the codegen/decorator path that
 // builds routes one-at-a-time before booting.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { Config } from "./main.ts";
+import { Config } from "../dist/index.js";
 
 describe("Config NAPI bindings", () => {
   it("new Config() creates instance with debug defaults", () => {

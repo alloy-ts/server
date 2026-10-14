@@ -4,7 +4,7 @@ import {
   generateTypes,
   parseRoutes,
   toRocketPath,
-} from "../src/main.ts";
+} from "../dist/index.js";
 
 // 1. Parse route definitions
 const routes = parseRoutes([

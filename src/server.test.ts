@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  Alloy,
   App,
   file,
   registerRoute,
@@ -9,7 +8,7 @@ import {
   responseJson,
   responseRedirect,
   serve,
-} from "./main.ts";
+} from "../dist/index.js";
 
 describe("server NAPI bindings", () => {
   it("response helper constructs Response object", () => {
@@ -49,9 +48,9 @@ describe("server NAPI bindings", () => {
     expect(sf.path).toBe("./static/app.js");
   });
 
-  it("Alloy.serve supports single options object signature and Alloy namespace", async () => {
+  it("serve supports single options object signature", async () => {
     const port = 3012;
-    const server = Alloy.serve({
+    const server = serve({
       port,
       hostname: "127.0.0.1",
       routes: {
@@ -66,7 +65,7 @@ describe("server NAPI bindings", () => {
         },
         "/api/*": responseJson({ message: "Not found" }, { status: 404 }),
         "/blog/hello": responseRedirect("/blog/hello/world"),
-        "/favicon.ico": Alloy.file("./favicon.ico"),
+        "/favicon.ico": file("./favicon.ico"),
       },
       fetch(req: RequestInput) {
         return response(`Fallback for ${req.path}`, { status: 404 });
@@ -106,7 +105,7 @@ describe("server NAPI bindings", () => {
   it("serve respects PORT environment variable fallback when port option is omitted", async () => {
     process.env["PORT"] = "3013";
     try {
-      const server = Alloy.serve({
+      const server = serve({
         hostname: "127.0.0.1",
         routes: {
           "/ping": response("pong"),

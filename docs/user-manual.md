@@ -102,12 +102,19 @@ For custom library-based or plugin mechanism route handlers (mirroring Rocket's 
 
 ```ts
 import {
+  Catcher,
   Handler,
   HandlerOutcomeKind,
   createHandlerOutcomeSuccess,
   createHandlerOutcomeError,
   createHandlerOutcomeForward,
 } from "@alloy-ts/server";
+
+// Register custom error catchers
+const notFoundCatcher = new Catcher(404, (_req) => {
+  return response("Custom 404 Error Page", { status: 404 });
+});
+notFoundCatcher.name = "NotFoundCatcher";
 
 import { RouteUri } from "@alloy-ts/server";
 

@@ -1,4 +1,4 @@
-import { Alloy, responseJson } from "../src/main.ts";
+import { responseJson, serve } from "../dist/index.js";
 
 interface User {
   id: string;
@@ -11,7 +11,7 @@ const users = new Map<string, User>([
   ["2", { id: "2", name: "Bob", email: "bob@example.com" }],
 ]);
 
-const server = Alloy.serve({
+const server = serve({
   port: 3000,
   hostname: "127.0.0.1",
   routes: {

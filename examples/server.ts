@@ -1,6 +1,6 @@
-import { Alloy, file, response, responseJson, responseRedirect } from "../src/main.ts";
+import { file, response, responseJson, responseRedirect, serve } from "../dist/index.js";
 
-const server = Alloy.serve({
+const server = serve({
   port: Number(process.env["PORT"] ?? 3000),
   hostname: "127.0.0.1",
   routes: {

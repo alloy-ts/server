@@ -1,4 +1,4 @@
-import { Alloy, Config, response } from "../src/main.ts";
+import { Config, response, serve } from "../dist/index.js";
 
 // 1. Create a Config with debug defaults
 const config = new Config();
@@ -39,7 +39,7 @@ console.log(`- Ident: ${customConfig.ident}`);
 console.log(`- Temp Dir: ${customConfig.tempDir}`);
 
 // 3. Launch server with custom port and configuration options
-const server = Alloy.serve({
+const server = serve({
   port: customConfig.port,
   hostname: customConfig.address,
   routes: {

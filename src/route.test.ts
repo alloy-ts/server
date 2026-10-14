@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { response, Route } from "./main.ts";
+import { response, Route } from "../dist/index.js";
 
 describe("Route NAPI class bindings", () => {
   it("Route.new() creates route with computed default rank", () => {

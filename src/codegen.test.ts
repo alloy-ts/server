@@ -8,7 +8,7 @@ import {
   parseRoute,
   parseRoutes,
   toRocketPath,
-} from "./main.ts";
+} from "../dist/index.js";
 
 describe("codegen NAPI bindings", () => {
   it("httpMethods returns all accepted HTTP methods", () => {
