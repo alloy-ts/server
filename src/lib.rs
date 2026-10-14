@@ -5,4 +5,5 @@ pub mod route;
 pub mod route_uri;
 pub mod handler;
 pub mod catcher;
+pub mod fairing;
 pub mod main;

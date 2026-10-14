@@ -119,6 +119,8 @@ const Alloy = {
   response: native.response,
   Response: native.Response,
   Config: native.Config,
+  Catcher: native.Catcher,
+  AdHoc: native.AdHoc,
   App,
   uri,
   routes,
