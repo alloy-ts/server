@@ -94,20 +94,20 @@ await app.launch();
 
 ---
 
-## 4. Route Metadata (`Route`)
+## 4. Route Metadata (`Route`) & Handler Outcomes (`HandlerOutcome`)
 
 Inspect and construct route metadata with Rocket's computed default ranks or explicit overrides:
 
 ```ts
-import { Route } from "@alloy-ts/server";
+import { Route, createHandlerOutcomeSuccess, createHandlerOutcomeForward } from "@alloy-ts/server";
 
 // Default computed rank (-9 for static path with no query)
 const route = new Route("GET", "/foo/bar", "index", "json");
 console.log(route.rank); // -9
 
-// Custom rank override
-const customRoute = Route.ranked(2, "POST", "/users", "create_user");
-console.log(customRoute.rank); // 2
+// Construct handler outcomes (Success, Error, Forward)
+const outcome = createHandlerOutcomeSuccess("Hello world", 200);
+console.log(outcome.status); // 200
 ```
 
 ---

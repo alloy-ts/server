@@ -1,5 +1,16 @@
 import { expect, test } from "vite-plus/test";
-import { main, Alloy, Response, Config, Route, buildUri, generateRoutesManifest } from "./main.ts";
+import {
+  main,
+  Alloy,
+  Response,
+  Config,
+  Route,
+  createHandlerOutcomeSuccess,
+  createHandlerOutcomeError,
+  createHandlerOutcomeForward,
+  buildUri,
+  generateRoutesManifest,
+} from "./main.ts";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
@@ -37,6 +48,20 @@ test("generateRoutesManifest generates valid TypeScript code", () => {
   expect(manifest).toContain("export const routesManifest = [");
   expect(manifest).toContain('"GET"');
   expect(manifest).toContain('"/api/status"');
+});
+
+test("HandlerOutcome constructs success, error, and forward outcomes", () => {
+  const success = createHandlerOutcomeSuccess("hello", 200);
+  expect(success.status).toBe(200);
+  expect(success.body).toBe("hello");
+  expect(success.forwarded).toBe(false);
+
+  const error = createHandlerOutcomeError(400);
+  expect(error.status).toBe(400);
+  expect(error.forwarded).toBe(false);
+
+  const forward = createHandlerOutcomeForward();
+  expect(forward.forwarded).toBe(true);
 });
 
 test("Route creates route metadata with computed and custom ranks", () => {
