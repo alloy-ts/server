@@ -300,30 +300,40 @@ fn mount_value<'env>(
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
-            let v = value.clone();
-            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
-                push_kind(
-                    RouteKind::File {
-                        path: fr.path,
-                    },
-                    pattern,
-                    methods,
-                    out,
-                );
-            } else if let Ok(resp) = unsafe { v.clone().cast::<Response>() } {
-                push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
-            } else {
-                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
-                        .parse()
-                        .map_err(|_| {
-                            napi::Error::new(
-                                Status::GenericFailure,
-                                format!("invalid method: {method}"),
-                            )
-                        })?;
-                    mount_value(method_value, pattern, &[m], out)?;
+            let obj: Object = unsafe { value.clone().cast()? };
+
+            if obj.has_named_property("path")? {
+                if let Ok(fr) = unsafe { value.clone().cast::<StaticFile>() } {
+                    push_kind(
+                        RouteKind::File { path: fr.path },
+                        pattern,
+                        methods,
+                        out,
+                    );
+                    return Ok(());
+                }
+            }
+
+            if obj.has_named_property("status")? {
+                if let Ok(resp) = unsafe { value.clone().cast::<Response>() } {
+                    push_kind(
+                        RouteKind::Static(Arc::new(resp)),
+                        pattern,
+                        methods,
+                        out,
+                    );
+                    return Ok(());
+                }
+            }
+
+            // Per-method map: `{ GET: ..., POST: ... }`.
+            let names = obj.get_property_names()?;
+            let len = names.get_array_length_unchecked()?;
+            for i in 0..len {
+                let method_str: String = names.get_element(i)?;
+                if let Ok(m) = method_str.parse::<Method>() {
+                    let method_val: Unknown<'_> = obj.get_named_property(&method_str)?;
+                    mount_value(method_val, pattern, &[m], out)?;
                 }
             }
         }

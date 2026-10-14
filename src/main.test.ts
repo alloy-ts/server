@@ -14,7 +14,7 @@ import {
   response,
   toRocketPath,
   translatePatternToAlloy,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");

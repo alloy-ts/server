@@ -13,7 +13,7 @@ import {
   parseRoutes,
   toRocketPath,
   translatePatternToAlloy,
-} from "../src/main.ts";
+} from "../dist/index.js";
 
 console.log("=== Rocket Code Generation Example ===\n");
 

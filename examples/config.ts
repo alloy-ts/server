@@ -5,7 +5,7 @@
  * using debug/release defaults or `Config.tryFrom()`.
  */
 
-import { Config, Rocket } from "../src/main.ts";
+import { Config, Rocket } from "../dist/index.js";
 
 console.log("=== Rocket Configuration Example ===");
 

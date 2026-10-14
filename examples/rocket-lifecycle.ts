@@ -5,7 +5,7 @@
  * catchers, ignition, launch, and graceful shutdown.
  */
 
-import { Rocket } from "../src/main.ts";
+import { Rocket } from "../dist/index.js";
 
 console.log("=== Rocket Lifecycle Example ===");
 
