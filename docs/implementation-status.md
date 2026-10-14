@@ -11,10 +11,11 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **Threadsafe Handler Execution:** JavaScript route handlers execute via `napi::threadsafe_function` (`ThreadsafeFunction`), supporting async JS handlers that resolve `Promise<Response>`.
 - **`Rocket` Lifecycle Class:** Exposes `new Rocket(config)`, `mount(base, method, path, handler)`, `register(base, code, handler)`, `launch()`, and `shutdown()`.
 
-### 2. Rocket Route, RouteUri & Ranking (`Route`, `RouteUri`, `computeDefaultRank`, `HandlerOutcome`)
+### 2. Rocket Route, RouteUri, Catcher & Ranking (`Route`, `RouteUri`, `Catcher`, `computeDefaultRank`, `HandlerOutcome`)
 
 - **`Route` NAPI Class:** Exposes `name`, `method`, `uri`, `rank`, and `format` properties, along with `new Route(method, uri, name?, format?)` and `Route.ranked(rank, method, uri, name?, format?)`.
 - **`RouteUri` NAPI Class:** Exposes `base`, `unmountedOrigin`, `origin`, `path()`, `query()`, and `asStr()`.
+- **`Catcher` NAPI Class:** Exposes `name`, `base`, `code`, and `mapBase(newBase)`.
 - **Default Ranking Algorithm (`computeDefaultRank`):** Implements Rocket's exact default ranking matrix based on path/query specificity (static, partial, wild, none) ranging from `-12` to `-1`.
 - **Custom Handler Outcomes (`HandlerOutcome`):** Supports `createSuccessOutcome()`, `createErrorOutcome()`, and `createForwardOutcome()`.
 

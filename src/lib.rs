@@ -1,3 +1,4 @@
+mod catcher;
 mod codegen;
 mod config;
 mod handler;
@@ -7,6 +8,7 @@ mod route;
 mod route_uri;
 mod server;
 
+pub use catcher::*;
 pub use codegen::*;
 pub use config::*;
 pub use handler::*;

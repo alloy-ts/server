@@ -51,12 +51,13 @@ console.log(`Server running at ${server.url}`);
 
 ---
 
-## 2. Rocket Route, RouteUri & Outcomes (`Route`, `RouteUri`, `HandlerOutcome`)
+## 2. Rocket Route, RouteUri, Catcher & Outcomes (`Route`, `RouteUri`, `Catcher`, `HandlerOutcome`)
 
 ```ts
 import {
   Route,
   RouteUri,
+  Catcher,
   computeDefaultRank,
   createSuccessOutcome,
   response,
@@ -75,8 +76,10 @@ const routeUri = new RouteUri("/base", "/foo/<bar>?a=1");
 console.log(routeUri.base); // "/base"
 console.log(routeUri.unmountedOrigin); // "/foo/<bar>?a=1"
 console.log(routeUri.origin); // "/base/foo/<bar>?a=1"
-console.log(routeUri.path()); // "/base/foo/<bar>"
-console.log(routeUri.query()); // "a=1"
+
+// Catcher instance
+const catcher = new Catcher(404, "not_found_catcher", "/api");
+console.log(catcher.code); // 404
 
 // Custom handler outcome
 const outcome = createSuccessOutcome(response("Success"));
@@ -117,7 +120,7 @@ const customConfig = Config.tryFrom({
 ## 4. Codegen Utilities (`Codegen`)
 
 ```ts
-import { buildUri, Codegen, responseJson } from "@alloy-ts/server";
+import { buildUri, Codegen } from "@alloy-ts/server";
 
 // Type-safe URI generation
 const userUrl = buildUri("/users/<id>?<rank>", { id: "42", rank: "admin" }, "/api");
