@@ -10,6 +10,7 @@
 
 mod codegen;
 mod config;
+mod handler;
 #[allow(special_module_name)]
 mod main;
 pub mod route;
