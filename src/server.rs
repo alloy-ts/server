@@ -201,7 +201,7 @@ impl Handler for JsHandler {
             .unwrap_or_default();
         match &*self.0 {
             RouteKind::Fn(tsfn) => {
-                let input = build_request(request, data, &pattern).await;
+                let input = build_request(request, Some(data), &pattern).await;
                 // `call_async` resolves to `Promise<Response>`; awaiting that
                 // promise yields the JS `Response` (or a JS error -> 500).
                 let output = match tsfn.call_async(input).await {
@@ -228,7 +228,7 @@ impl Handler for JsHandler {
 
 /// Extract the request data Rocket matched into the JS-facing [`RequestInput`],
 /// including any `:param` / `<param>` path segments.
-pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern: &str) -> RequestInput {
+pub(crate) async fn build_request(request: &Request<'_>, data: Option<Data<'_>>, pattern: &str) -> RequestInput {
     let method = request.method().as_str().to_string();
     let uri = request.uri();
     let path = uri.path().to_string();
@@ -239,11 +239,12 @@ pub(crate) async fn build_request(request: &Request<'_>, data: Data<'_>, pattern
         .map(|h| (h.name.as_str().to_string(), h.value().to_string()))
         .collect();
 
-    // Read up to 1 MiB of body. Larger bodies are truncated for the MVP; raise
-    // the `ByteUnit` limit (or stream) when needed.
-    let body = match data.open(ByteUnit::Megabyte(1)).into_bytes().await {
-        Ok(capped) => Some(capped.value),
-        Err(_) => None,
+    let body = match data {
+        Some(data) => match data.open(ByteUnit::Megabyte(1)).into_bytes().await {
+            Ok(capped) => Some(capped.value),
+            Err(_) => None,
+        },
+        None => None,
     };
 
     let params = extract_params(pattern, &path);

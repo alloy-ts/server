@@ -73,7 +73,7 @@ impl RocketHandler for Handler {
             .map(|r| r.uri.to_string())
             .unwrap_or_default();
 
-        let input = build_request(request, data, &pattern).await;
+        let input = build_request(request, Some(data), &pattern).await;
         let output = match self.tsfn.call_async(input).await {
             Ok(promise) => match promise.await {
                 Ok(payload) => payload,
@@ -82,5 +82,27 @@ impl RocketHandler for Handler {
             Err(_) => return RouteOutcome::Error(RocketStatus::InternalServerError),
         };
         RouteOutcome::Success(build_response(&output))
+    }
+}
+
+#[rocket::async_trait]
+impl rocket::catcher::Handler for Handler {
+    async fn handle<'r>(&self, status: RocketStatus, request: &'r Request<'_>) -> rocket::catcher::Result<'r> {
+        let pattern = request
+            .route()
+            .map(|r| r.uri.to_string())
+            .unwrap_or_default();
+
+        let mut input = build_request(request, None, &pattern).await;
+        input.headers.insert("X-Status-Code".to_string(), status.code.to_string());
+
+        let output = match self.tsfn.call_async(input).await {
+            Ok(promise) => match promise.await {
+                Ok(payload) => payload,
+                Err(_) => return Err(RocketStatus::InternalServerError),
+            },
+            Err(_) => return Err(RocketStatus::InternalServerError),
+        };
+        Ok(build_response(&output))
     }
 }
