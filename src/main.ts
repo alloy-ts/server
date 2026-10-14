@@ -39,6 +39,7 @@ export const generateTypes = native.generateTypes;
 export const generateClient = native.generateClient;
 export const generateModule = native.generateModule;
 export const Config = native.Config;
+export const Route = native.Route;
 
 export function translatePattern(pattern: string): string {
   return native.toRocketPath(pattern);
