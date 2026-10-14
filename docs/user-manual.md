@@ -18,6 +18,7 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
    - [Port & Hostname Configuration](#port--hostname-configuration)
 5. [Rocket Server Lifecycle (`Rocket`)](#rocket-server-lifecycle-rocket)
    - [Mounting Routes & Catchers](#mounting-routes--catchers)
+   - [Custom Routes (`Route`) & Handler Outcomes (`HandlerBridge`)](#custom-routes-route--handler-outcomes-handlerbridge)
    - [Launch & Graceful Shutdown](#launch--graceful-shutdown)
 6. [Rocket Configuration (`Config`)](#rocket-configuration-config)
    - [Inspecting Defaults](#inspecting-defaults)
@@ -34,7 +35,7 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
 `@alloy-ts/server` provides dual paradigms for building web services backed by Rust's Rocket framework:
 
 1. **Bun/Alloy-compatible High Level API (`serve`)**: Declarative route map syntax with low-overhead handler dispatching.
-2. **Direct Rocket Control (`Rocket` / `Config`)**: Direct control over Rocket's lifecycle, fairings, catchers, and Figment configuration.
+2. **Direct Rocket Control (`Rocket` / `Config` / `Route` / `HandlerBridge`)**: Direct control over Rocket's lifecycle, routes, ranks, catchers, and Figment configuration.
 
 ---
 
@@ -43,8 +44,6 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
 ```bash
 npm install @alloy-ts/server
 ```
-
-_(Native binaries are precompiled for major OS/architecture targets via `@napi-rs/cli`.)_
 
 ---
 
@@ -135,7 +134,7 @@ serve(
   {
     "/": response("Home"),
   },
-  (_req) => response("Not Found", { status: 404 }),
+  (_req) => response("Not Found", { status: 404 })
 );
 ```
 
@@ -144,17 +143,21 @@ serve(
 If `port` is omitted, `serve` automatically inspects `BUN_PORT`, `PORT`, or `NODE_PORT` environment variables before defaulting to `3000`.
 
 ```ts
-serve({ "/": response("OK") }, undefined, {
-  port: 8080,
-  hostname: "127.0.0.1",
-});
+serve(
+  { "/": response("OK") },
+  undefined,
+  {
+    port: 8080,
+    hostname: "127.0.0.1",
+  }
+);
 ```
 
 ---
 
 ## Rocket Server Lifecycle (`Rocket`)
 
-For low-level Rocket programmatic control:
+### Mounting Routes & Catchers
 
 ```ts
 import { Rocket, responseJson } from "@alloy-ts/server";
@@ -164,12 +167,10 @@ const rocket = new Rocket({
   address: "127.0.0.1",
 });
 
-// Register custom status catcher
 rocket.register("/", 404, (_req) => {
   return responseJson({ error: "Custom 404 Catcher" }, { status: 404 });
 });
 
-// Mount route
 rocket.mount("/", "GET", "/status", async () => {
   return responseJson({ status: "healthy" });
 });
@@ -177,20 +178,38 @@ rocket.mount("/", "GET", "/status", async () => {
 await rocket.launch();
 ```
 
+### Custom Routes (`Route`) & Handler Outcomes (`HandlerBridge`)
+
+You can create explicit Rocket routes with custom ranks and handler outcomes (`success`, `error`, `forward`):
+
+```ts
+import { Route, HandlerBridge } from "@alloy-ts/server";
+
+// Ranked route
+const route = Route.ranked(1, "GET", "/api/items", (req) => {
+  if (!req.headers.find((h) => h.name.toLowerCase() === "authorization")) {
+    return HandlerBridge.forward(401);
+  }
+  return HandlerBridge.success({
+    status: 200,
+    headers: [{ name: "content-type", value: "application/json" }],
+    body: Buffer.from(JSON.stringify({ items: [] })),
+  });
+});
+
+console.log(route.rank, route.uri);
+```
+
 ---
 
 ## Rocket Configuration (`Config`)
 
-Mirror of Rocket's Figment-backed configuration:
-
 ```ts
 import { Config } from "@alloy-ts/server";
 
-// Debug defaults
 const config = Config.debugDefault();
 console.log(config.port, config.logLevel);
 
-// Partial overrides
 const custom = Config.tryFrom({
   port: 9000,
   logLevel: "critical",
@@ -201,31 +220,6 @@ const custom = Config.tryFrom({
 ---
 
 ## TypeScript Code Generation (`codegen`)
-
-### Pattern Parsing (`parseRoute` / `parseRoutes`)
-
-```ts
-import { parseRoute } from "@alloy-ts/server";
-
-const route = parseRoute({
-  method: "GET",
-  path: "/users/:id?<active>",
-  response: "User",
-});
-
-console.log(route.name); // "getUsersById"
-console.log(route.rocketPath); // "/users/<id>"
-```
-
-### Pattern Translation (`toRocketPath`)
-
-```ts
-import { toRocketPath } from "@alloy-ts/server";
-
-console.log(toRocketPath("/api/v1/files/*")); // "/api/v1/files/<_..>"
-```
-
-### SDK & Type Generation (`generateModule`)
 
 ```ts
 import { parseRoutes, generateModule } from "@alloy-ts/server";

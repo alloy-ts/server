@@ -6,16 +6,18 @@ This document details the current implementation status of Node.js / TypeScript 
 
 ## Executive Summary
 
-| Feature Area                              |   Status    | Implementation Details                                                                                                                                                                                |
-| :---------------------------------------- | :---------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Rocket Core Server (`Rocket`)**         | ✅ Complete | Full NAPI lifecycle (`new`, `mount`, `register`, `launch`, `shutdown`) wrapping `Rocket<Build>`.                                                                                                      |
-| **HTTP Server (`Alloy.serve` / `serve`)** | ✅ Complete | Bun/Alloy-compatible declarative route map server with fallback `fetch`.                                                                                                                              |
-| **Port Resolution**                       | ✅ Complete | Explicit `port` option + fallback order: `BUN_PORT` → `PORT` → `NODE_PORT` → `3000`.                                                                                                                  |
-| **Rocket Configuration (`Config`)**       | ✅ Complete | Full mirror of Rocket's Figment-backed `Config` (`debugDefault`, `releaseDefault`, `tryFrom`, `from`, parameter constants).                                                                           |
-| **Error Catchers**                        | ✅ Complete | Registration of status-specific (404, 500) and default catchers (`rocket.register()`).                                                                                                                |
-| **TypeScript Codegen (`codegen`)**        | ✅ Complete | Runtime pattern parsing (`parseRoute`), syntax translation (`toRocketPath`), type emission (`generateTypes`), client SDK (`generateClient`), and self-contained module generation (`generateModule`). |
-| **Cross-Thread Dispatch**                 | ✅ Complete | Non-blocking background Tokio multi-thread runtime bridged via `ThreadsafeFunction`.                                                                                                                  |
-| **Testing Coverage**                      | ✅ Complete | Unit tests covering codegen parsing, emission, type bounds, and configuration mutation (`src/codegen.test.ts`, `src/config.test.ts`).                                                                 |
+| Feature Area | Status | Implementation Details |
+| :--- | :---: | :--- |
+| **Rocket Core Server (`Rocket`)** | ✅ Complete | Full NAPI lifecycle (`new`, `mount`, `register`, `launch`, `shutdown`) wrapping `Rocket<Build>`. |
+| **HTTP Server (`Alloy.serve` / `serve`)** | ✅ Complete | Bun/Alloy-compatible declarative route map server with fallback `fetch`. |
+| **Route Class (`Route`)** | ✅ Complete | NAPI `Route` wrapper with computed/explicit ranks, method, URI, format, name, and `mapBase`. |
+| **Handler Outcomes (`HandlerBridge`)** | ✅ Complete | NAPI bridge for Rocket's `Handler` trait supporting `Success`, `Error`, and `Forward` outcomes. |
+| **Port Resolution** | ✅ Complete | Explicit `port` option + fallback order: `BUN_PORT` → `PORT` → `NODE_PORT` → `3000`. |
+| **Rocket Configuration (`Config`)** | ✅ Complete | Full mirror of Rocket's Figment-backed `Config` (`debugDefault`, `releaseDefault`, `tryFrom`, `from`, parameter constants). |
+| **Error Catchers** | ✅ Complete | Registration of status-specific (404, 500) and default catchers (`rocket.register()`). |
+| **TypeScript Codegen (`codegen`)** | ✅ Complete | Runtime pattern parsing (`parseRoute`), syntax translation (`toRocketPath`), type emission (`generateTypes`), client SDK (`generateClient`), and self-contained module generation (`generateModule`). |
+| **Cross-Thread Dispatch** | ✅ Complete | Non-blocking background Tokio multi-thread runtime bridged via `ThreadsafeFunction`. |
+| **Testing Coverage** | ✅ Complete | Unit tests covering codegen parsing, emission, configuration, handler outcomes, and route ranking (`src/*.test.ts`). |
 
 ---
 
@@ -39,14 +41,21 @@ This document details the current implementation status of Node.js / TypeScript 
 - ✅ **Ignition & Launch**: `rocket.launch()` executing on dedicated Tokio runtime.
 - ✅ **Graceful Shutdown**: `rocket.shutdown()` notifying Rocket's cancellation tripwire.
 
-### 3. Rocket Configuration (`Config` Class)
+### 3. Route & Handler Trait Bindings (`Route` & `HandlerBridge`)
+
+- ✅ **Route Class**: `new Route(method, uri, handler)`, `Route.ranked(rank, method, uri, handler)`.
+- ✅ **Route Inspection**: Getters for `name`, `method`, `uri`, `rank`, and `format`.
+- ✅ **Rebasing**: `route.mapBase(base)` returning new rebased `Route`.
+- ✅ **Custom Handler Outcomes**: `HandlerBridge` supporting `success(response)`, `error(status)`, and `forward(status)`.
+
+### 4. Rocket Configuration (`Config` Class)
 
 - ✅ **Profile Presets**: `Config.debugDefault()`, `Config.releaseDefault()`, `Config.defaultConfig()`.
 - ✅ **Partial Overrides**: `Config.tryFrom(init)` merging partial overrides onto defaults.
 - ✅ **Getters & Setters**: Read/write access for `address`, `port`, `workers`, `maxBlocking`, `keepAlive`, `ident`, `ipHeader`, `limits`, `tempDir`, `logLevel`, `shutdown`, `cliColors`.
 - ✅ **Validation**: Eager IP address and log-level syntax validation on setters.
 
-### 4. Code Generation (`codegen` Module)
+### 5. Code Generation (`codegen` Module)
 
 - ✅ **Route Parsing**: `parseRoute` / `parseRoutes` converting route inputs into structured `RouteDef`.
 - ✅ **Pattern Translation**: `toRocketPath` translating Bun/Alloy patterns (`:id`, `*`) to Rocket syntax (`<id>`, `<_..>`).
@@ -59,8 +68,9 @@ This document details the current implementation status of Node.js / TypeScript 
 
 ---
 
-## Known Limitations & Future Work
+## What's Missing / Next Steps for NAPI Bindings
 
-1. **HTTP/2 & WebSocket Upgrade Stream**: Connection upgrade streams (WebSockets) require explicit Rocket `IoHandler` bridging.
-2. **Streaming Request/Response Bodies**: Request bodies are capped at 1 MiB in the default wrapper; chunked streaming bindings can be added for ultra-large payloads.
-3. **TLS Feature Gating**: TLS and mTLS configuration require compiling Rust binary with `--features tls,secrets`.
+1. **Managed State (`State<T>`)**: Exposing Rocket's managed state container to TS handlers.
+2. **Request Guards**: Exposing custom request guards bridging headers/cookies/auth logic.
+3. **Fairings (`Fairing`)**: Support for attaching lifecycle hook callbacks (`on_request`, `on_response`, `on_shutdown`).
+4. **Streaming Payload Support**: Support for streaming chunked request/response bodies beyond memory buffers.
