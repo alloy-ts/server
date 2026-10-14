@@ -129,8 +129,7 @@ fn build_limits(napi: &Limits) -> napi::Result<RocketLimits> {
                     )
                 })?,
         };
-        let static_name: &'static str = Box::leak(name.clone().into_boxed_str());
-        limits = limits.limit(static_name, unit);
+        limits = limits.limit(name.clone(), unit);
     }
     Ok(limits)
 }

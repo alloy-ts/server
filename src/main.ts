@@ -107,5 +107,6 @@ export const Codegen = native.Codegen;
 export const parseRoutePattern = native.parseRoutePattern;
 export const Config = native.Config;
 export const Route = native.Route;
+export const CustomHandler = native.CustomHandler;
 
 export { native };
