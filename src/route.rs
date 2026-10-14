@@ -9,6 +9,7 @@ use rocket::http::Method;
 use rocket::route::dummy_handler;
 use rocket::Route as RocketRoute;
 
+#[derive(Clone)]
 #[napi]
 pub struct Route {
   pub name: Option<String>,
