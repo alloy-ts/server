@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { main, Alloy, Response, Config, buildUri, generateRoutesManifest } from "./main.ts";
+import { main, Alloy, Response, Config, Route, buildUri, generateRoutesManifest } from "./main.ts";
 
 test("main returns Hello, world!", () => {
   expect(main()).toBe("Hello, world!");
@@ -37,6 +37,20 @@ test("generateRoutesManifest generates valid TypeScript code", () => {
   expect(manifest).toContain("export const routesManifest = [");
   expect(manifest).toContain('"GET"');
   expect(manifest).toContain('"/api/status"');
+});
+
+test("Route creates route metadata with computed and custom ranks", () => {
+  const defaultRoute = new Route("GET", "/foo/bar", "index", "json");
+  expect(defaultRoute.method).toBe("GET");
+  expect(defaultRoute.uri).toBe("/foo/bar");
+  expect(defaultRoute.rank).toBe(-9);
+  expect(defaultRoute.name).toBe("index");
+
+  const customRoute = Route.ranked(2, "POST", "/users", "create_user");
+  expect(customRoute.method).toBe("POST");
+  expect(customRoute.uri).toBe("/users");
+  expect(customRoute.rank).toBe(2);
+  expect(customRoute.name).toBe("create_user");
 });
 
 test("Config exposes default options", () => {
