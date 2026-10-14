@@ -101,6 +101,7 @@ export const registerRoute = native.registerRoute;
 export const Response = native.Response;
 export const Config = native.Config;
 export const Server = native.Server;
+export const RocketRoute = native.Route;
 
 /**
  * Alloy namespace exposing Rocket server runtime and helper utilities.
@@ -113,6 +114,7 @@ export const Alloy = {
   Response: native.Response,
   Config: native.Config,
   Server: native.Server,
+  Route: native.Route,
   App,
   response,
 };
