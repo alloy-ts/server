@@ -95,14 +95,37 @@ app.stop();
 
 ---
 
-## 3. Server Configuration (`Config`)
+## 3. Rocket `Route` Class & Default Rank Calculation
+
+Rocket routes requests based on collision precedence tables (ranks). You can construct, inspect, and calculate ranks using the `Route` class:
+
+```typescript
+import { Route } from "@alloy-ts/server";
+
+// 1. Create a route with default computed rank (-9 for "GET /")
+const index = new Route("GET", "/");
+console.log(index.rank); // -9
+
+// 2. Create a ranked route
+const custom = Route.ranked("POST", "/foo?bar", 1);
+console.log(custom.rank); // 1
+
+// 3. Calculate Rocket's default rank for a URI pattern
+console.log(Route.defaultRank("/?foo")); // -12 (static path, static query)
+console.log(Route.defaultRank("/a/<b>")); // -5 (partial path, no query)
+console.log(Route.defaultRank("/<b>/<c>")); // -1 (wild path, no query)
+```
+
+---
+
+## 4. Server Configuration (`Config`)
 
 Rocket's underlying configuration system (built on Figment) is fully exposed via the `Config` class.
 
 ### Creating Configuration
 
 ```typescript
-import { Config, App } from "@alloy-ts/server";
+import { Config } from "@alloy-ts/server";
 
 // 1. Default configuration
 const config = Config.debug(); // or Config.release()
@@ -125,7 +148,7 @@ console.log(`Configured address: ${customConfig.address}`);
 
 ---
 
-## 4. `Response` Utility Class
+## 5. `Response` Utility Class
 
 The native `Response` class supports Web-standard constructors and static helper methods:
 
@@ -147,7 +170,7 @@ const r3 = Response.redirect("https://example.com", 302);
 
 ---
 
-## 5. Running Example Files
+## 6. Running Example Files
 
 All examples in `examples/` can be run using Node.js with `@oxc-node/core`:
 
