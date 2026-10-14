@@ -1,6 +1,5 @@
 import { expect, test } from "vite-plus/test";
 import {
-  main,
   response,
   responseJson,
   responseRedirect,
@@ -8,12 +7,8 @@ import {
   Config,
   Rocket,
   Codegen,
-  uri,
-} from "./main.ts";
-
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
-});
+  buildUri,
+} from "../dist/index.js";
 
 test("Config API creates and manages configuration", () => {
   const cfg = new Config();
@@ -56,7 +51,7 @@ test("Codegen Rocket attributes parser and uri builder", () => {
   expect(catchMeta.code).toBe(404);
   expect(catchMeta.isDefault).toBe(false);
 
-  const builtUri = uri("/person/<name>?<age>", { name: "John Doe", age: 30 }, "/api");
+  const builtUri = buildUri("/person/<name>?<age>", { name: "John Doe", age: "30" }, "/api");
   expect(builtUri).toBe("/api/person/John%20Doe?age=30");
 
   const tsRoutes = Codegen.generateTsRoutes([routeMeta]);

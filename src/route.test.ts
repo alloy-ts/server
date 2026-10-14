@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Route, computeDefaultRank } from "./main.ts";
+import { Route, computeDefaultRank } from "../dist/index.js";
 
 test("computeDefaultRank computes correct Rocket default ranks", () => {
   expect(computeDefaultRank("/?foo")).toBe(-12); // static path, static query

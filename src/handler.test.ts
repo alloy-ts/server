@@ -4,7 +4,7 @@ import {
   createErrorOutcome,
   createForwardOutcome,
   response,
-} from "./main.ts";
+} from "../dist/index.js";
 
 test("HandlerOutcome success, error, and forward helpers", () => {
   const resp = response("Custom Handler Response");

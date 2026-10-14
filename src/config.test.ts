@@ -1,5 +1,12 @@
 import { expect, test } from "vite-plus/test";
-import { Config, DEBUG_PROFILE, RELEASE_PROFILE, DEFAULT_PROFILE, ADDRESS, PORT } from "./main.ts";
+import {
+  Config,
+  DEBUG_PROFILE,
+  RELEASE_PROFILE,
+  DEFAULT_PROFILE,
+  ADDRESS,
+  PORT,
+} from "../dist/index.js";
 
 test("Config constants match Rocket parameters and profiles", () => {
   expect(DEBUG_PROFILE).toBe("debug");
