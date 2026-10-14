@@ -74,6 +74,10 @@ export const Alloy = {
   responseRedirect: native.responseRedirect,
   registerRoute: native.registerRoute,
   Config: native.Config,
+  Rocket: native.Rocket,
+  Route: native.Route,
+  launch: native.launch,
+  rocketMain: native.rocketMain,
   App,
 };
 
