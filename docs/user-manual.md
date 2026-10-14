@@ -1,6 +1,6 @@
 # `@alloy-ts/server` User Manual
 
-The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NAPI bindings for the **Rocket** web framework, along with Bun/Alloy-compatible APIs, full server configuration controls, and route code generation utilities.
+The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NAPI bindings for the **Rocket** web framework, along with Bun/Alloy-compatible APIs, full server configuration controls, route management, and route code generation utilities.
 
 ---
 
@@ -16,8 +16,9 @@ The `@alloy-ts/server` package provides high-performance Node.js / TypeScript NA
    - [Request Helper Methods (`req.json()`, `req.text()`, `req.params`)](#request-helper-methods)
    - [Response Helpers (`Response`, `Response.json()`, `Response.redirect()`)](#response-helpers)
    - [Static File Serving (`Bun.file` / `file`)](#static-file-serving)
-4. [Low-Level Rocket Lifecycle (`Rocket`)](#low-level-rocket-lifecycle-rocket)
-5. [TypeScript Code Generation (`codegen`)](#typescript-code-generation-codegen)
+4. [Route Management & Custom Handlers (`Route` & `HandlerOutcome`)](#route-management--custom-handlers-route--handleroutcome)
+5. [Low-Level Rocket Lifecycle (`Rocket`)](#low-level-rocket-lifecycle-rocket)
+6. [TypeScript Code Generation (`codegen`)](#typescript-code-generation-codegen)
    - [Route Pattern Translation](#route-pattern-translation)
    - [Type-Safe Client SDK Generation](#type-safe-client-sdk-generation)
 
@@ -175,6 +176,29 @@ Alloy.serve({
     "/static/app.js": file("./dist/app.js"),
   },
 });
+```
+
+---
+
+## Route Management & Custom Handlers (`Route` & `HandlerOutcome`)
+
+Inspect, construct, and rank routes using NAPI bindings for `Route`:
+
+```ts
+import { Route, handlerSuccess, handlerError, handlerForward, response } from "@alloy-ts/server";
+
+// Construct a route with method, URI, name, format
+const route = new Route("GET", "/items/<id>", "getItem", "json");
+console.log(route.rank); // -9 (computed Rocket default rank)
+
+// Map URI base prefix
+route.mapBase("/v1");
+console.log(route.uri); // "/v1/items/<id>"
+
+// Custom Handler outcomes
+const ok = handlerSuccess(response("Hello"));
+const err = handlerError(400);
+const fwd = handlerForward(404);
 ```
 
 ---
