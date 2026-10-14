@@ -909,6 +909,7 @@ export const Response = nativeBinding.Response;
 export const Config = nativeBinding.Config;
 export const Rocket = nativeBinding.Rocket;
 export const Route = nativeBinding.Route;
+export const RouteUri = nativeBinding.RouteUri;
 export const Handler = nativeBinding.Handler;
 export const outcomeSuccess = nativeBinding.outcomeSuccess;
 export const outcomeError = nativeBinding.outcomeError;

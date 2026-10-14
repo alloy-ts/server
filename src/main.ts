@@ -141,6 +141,7 @@ export const file = native.file;
 export const Config = native.Config;
 export const Rocket = native.Rocket;
 export const Route = native.Route;
+export const RouteUri = native.RouteUri;
 export const Handler = native.Handler;
 export const outcomeSuccess = native.outcomeSuccess;
 export const outcomeError = native.outcomeError;
@@ -283,6 +284,7 @@ export const Alloy = {
   Config,
   Rocket,
   Route,
+  RouteUri,
   Handler,
   outcomeSuccess,
   outcomeError,

@@ -28,6 +28,17 @@ void test("Rocket NAPI Route", async () => {
   assert.equal(route.name, "test_route");
 });
 
+void test("Rocket NAPI RouteUri", async () => {
+  const { RouteUri } = await import("./dist/main.mjs");
+  const routeUri = new RouteUri("/base", "/foo/<bar>?a=1");
+  assert.equal(routeUri.base, "/base");
+  assert.equal(routeUri.unmountedOrigin, "/foo/<bar>?a=1");
+  assert.equal(routeUri.origin, "/base/foo/<bar>?a=1");
+  assert.equal(routeUri.path, "/base/foo/<bar>");
+  assert.equal(routeUri.query, "a=1");
+  assert.equal(routeUri.asStr, "/base/foo/<bar>?a=1");
+});
+
 void test("Rocket NAPI Handler", async () => {
   const { Handler, outcomeSuccess } = await import("./dist/main.mjs");
   const handler = new Handler(() => outcomeSuccess({ status: 200, body: Buffer.from("OK") }));

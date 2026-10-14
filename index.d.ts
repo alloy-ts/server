@@ -91,6 +91,16 @@ export declare class Route {
   mapBase(base: string): void;
 }
 
+export declare class RouteUri {
+  constructor(base: string, uri: string);
+  get base(): string;
+  get path(): string;
+  get query(): string | null;
+  get asStr(): string;
+  get unmountedOrigin(): string;
+  get origin(): string;
+}
+
 export interface HandlerOutcome {
   status: string;
   response?: ResponsePayload;
