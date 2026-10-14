@@ -46,6 +46,7 @@ fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
 
 /// A request handed to a JS handler.
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct RequestPayload {
     pub method: String,
     pub path: String,
@@ -54,10 +55,11 @@ pub struct RequestPayload {
     /// Path parameters extracted from the route pattern (e.g. `req.params.id`).
     pub params: Option<HashMap<String, String>>,
     /// Raw request body, or `undefined` when the request carries no body.
-    pub body: Option<Buffer>,
+    pub body: Option<Vec<u8>>,
 }
 
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct JsHeader {
     pub name: String,
     pub value: String,
@@ -65,10 +67,11 @@ pub struct JsHeader {
 
 /// A response returned from a JS handler.
 #[napi(object)]
+#[derive(Clone, Debug)]
 pub struct ResponsePayload {
     pub status: Option<u32>,
     pub headers: Option<Vec<JsHeader>>,
-    pub body: Option<Buffer>,
+    pub body: Option<Vec<u8>>,
 }
 
 /// Align a Rocket route pattern's `<param>` segments with the actual request path.
@@ -128,7 +131,7 @@ pub(crate) async fn build_request_payload(
             if buf.is_empty() {
                 None
             } else {
-                Some(Buffer::from(buf))
+                Some(buf)
             }
         }
         None => None,
@@ -168,8 +171,7 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
     }
 
     if let Some(body) = resp.body {
-        let bytes: Vec<u8> = body.to_vec();
-        builder.sized_body(bytes.len(), std::io::Cursor::new(bytes));
+        builder.sized_body(body.len(), std::io::Cursor::new(body));
     }
 
     builder.finalize()
