@@ -163,9 +163,7 @@ Extract route definitions and emit client SDKs:
 ```ts
 import { parseRoutes, generateModule } from "@alloy-ts/server";
 
-const defs = parseRoutes([
-  { method: "GET", path: "/users/:id", response: "User" },
-]);
+const defs = parseRoutes([{ method: "GET", path: "/users/:id", response: "User" }]);
 
 const sdkCode = generateModule(defs);
 ```

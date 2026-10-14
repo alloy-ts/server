@@ -579,10 +579,41 @@ pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> nap
     Ok(())
 }
 
+#[allow(deprecated)]
+fn parse_route_kind<'env>(value: Unknown<'env>) -> napi::Result<RouteKind> {
+    match value.get_type()? {
+        ValueType::Function => {
+            let f = to_js_function(value);
+            let tsfn: HandlerTsfn =
+                f.create_threadsafe_function::<RequestInput, RequestInput, Promise<Response>, Status, _, false, false, 0>(
+                    |ctx| Ok(ctx.value),
+                )?;
+            Ok(RouteKind::Fn(Arc::new(tsfn)))
+        }
+        ValueType::Object => {
+            let v = value.clone();
+            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
+                Ok(RouteKind::File { path: fr.path })
+            } else if let Ok(resp) = unsafe { v.clone().cast::<Response>() } {
+                Ok(RouteKind::Static(Arc::new(resp)))
+            } else {
+                Err(napi::Error::new(
+                    Status::InvalidArg,
+                    "invalid handler object; expected Response, StaticFile, or Function",
+                ))
+            }
+        }
+        other => Err(napi::Error::new(
+            Status::InvalidArg,
+            format!("invalid handler type: {other:?}"),
+        )),
+    }
+}
+
 /// Express/Rocket app builder class for dynamic route registration.
 #[napi]
 pub struct App {
-    routes: Vec<(String, String, Unknown<'static>)>,
+    routes: Vec<(String, String, RouteKind)>,
 }
 
 #[napi]
@@ -593,54 +624,55 @@ impl App {
     }
 
     #[napi]
-    pub fn get<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("GET".to_string(), path, handler);
+    pub fn get<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("GET".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn post<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("POST".to_string(), path, handler);
+    pub fn post<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("POST".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn put<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("PUT".to_string(), path, handler);
+    pub fn put<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("PUT".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn delete<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("DELETE".to_string(), path, handler);
+    pub fn delete<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("DELETE".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn patch<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("PATCH".to_string(), path, handler);
+    pub fn patch<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("PATCH".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn head<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("HEAD".to_string(), path, handler);
+    pub fn head<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("HEAD".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn options<'env>(&mut self, path: String, handler: Unknown<'env>) {
-        self.route("OPTIONS".to_string(), path, handler);
+    pub fn options<'env>(&mut self, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        self.route("OPTIONS".to_string(), path, handler)
     }
 
     #[napi]
-    pub fn route<'env>(&mut self, method: String, path: String, handler: Unknown<'env>) {
-        let handler_static: Unknown<'static> = unsafe { std::mem::transmute(handler) };
-        self.routes.push((method.to_ascii_uppercase(), path, handler_static));
+    pub fn route<'env>(&mut self, method: String, path: String, handler: Unknown<'env>) -> napi::Result<()> {
+        let kind = parse_route_kind(handler)?;
+        self.routes.push((method.to_ascii_uppercase(), path, kind));
+        Ok(())
     }
 
     #[napi]
     pub fn launch(&mut self, options: Option<ServeOptions>) -> napi::Result<Server> {
         let mut out: Vec<Route> = Vec::new();
-        for (method, pattern, handler) in self.routes.drain(..) {
-            let m: Method = method
+        for (method_str, pattern, kind) in self.routes.drain(..) {
+            let m: Method = method_str
                 .parse()
-                .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-            mount_value(handler, &pattern, &[m], &mut out)?;
+                .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method_str}")))?;
+            push_kind(kind, &pattern, &[m], &mut out);
         }
 
         let options = options.unwrap_or_else(|| ServeOptions {
