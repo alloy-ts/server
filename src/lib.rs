@@ -7,6 +7,7 @@
 //!
 //! NAPI bindings that expose the Rocket web framework to Node.js and TypeScript.
 
+mod catcher;
 mod codegen;
 mod config;
 mod handler;
@@ -15,6 +16,7 @@ mod route;
 mod route_uri;
 mod server;
 
+pub use catcher::*;
 pub use codegen::*;
 pub use config::*;
 pub use handler::*;
