@@ -1,7 +1,37 @@
-import { App, response } from "@alloy-ts/server";
-const app = new App();
+/**
+ * Translation of the canonical Rocket quickstart example into Alloy
+ * (`@alloy-ts/server`):
+ *
+ * ```rust
+ * #[macro_use] extern crate rocket;
+ *
+ * #[get("/")]
+ * fn hello() -> &'static str {
+ *     "Hello, world!"
+ * }
+ *
+ * #[launch]
+ * fn rocket() -> _ {
+ *     rocket::build().mount("/", routes![hello])
+ * }
+ * ```
+ */
 
-app.get("/", async () => response("Hello, world!"));
-app.launch();
+import { Alloy, response } from "../dist/index.js";
 
-console.log("Server running at http://localhost:3000");
+// #[get("/")]
+// fn hello() -> &'static str {
+//     "Hello, world!"
+// }
+
+// #[launch]
+// fn rocket() -> _ {
+//     rocket::build().mount("/", routes![hello])
+// }
+const server = Alloy.serve({
+  routes: {
+    "/": () => response("Hello, world!"),
+  },
+});
+
+console.log(`Server running at ${server.url}`);
