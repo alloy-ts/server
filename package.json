@@ -6,7 +6,7 @@
     "native"
   ],
   "type": "module",
-  "types": "index.d.ts",
+  "types": "native/index.d.ts",
   "exports": {
     ".": "./dist/main.mjs",
     "./package.json": "./package.json"
