@@ -90,6 +90,8 @@ export const parseCatcherAttribute = native.parseCatcherAttribute;
 export const buildUri = native.buildUri;
 export const generateTsRouteManifest = native.generateTsRouteManifest;
 export const createRoute = native.createRoute;
+export const createHandler = native.createHandler;
+export const HandlerOutcomeStatus = native.HandlerOutcomeStatus;
 
 export const Rocket = native.Rocket;
 export const Config = native.Config;
@@ -107,6 +109,8 @@ export const Alloy = {
   buildUri,
   generateTsRouteManifest,
   createRoute,
+  createHandler,
+  HandlerOutcomeStatus,
 };
 
 export default Alloy;
