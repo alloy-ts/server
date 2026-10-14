@@ -18,7 +18,8 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
    - [Port & Hostname Configuration](#port--hostname-configuration)
 5. [Rocket Server Lifecycle (`Rocket`)](#rocket-server-lifecycle-rocket)
    - [Mounting Routes & Catchers](#mounting-routes--catchers)
-   - [Custom Routes (`Route`) & Handler Outcomes (`HandlerBridge`)](#custom-routes-route--handler-outcomes-handlerbridge)
+   - [Custom Routes (`Route`) & Route URIs (`RouteUri`)](#custom-routes-route--route-uris-routeuri)
+   - [Handler Outcomes (`HandlerBridge`)](#handler-outcomes-handlerbridge)
    - [Launch & Graceful Shutdown](#launch--graceful-shutdown)
 6. [Rocket Configuration (`Config`)](#rocket-configuration-config)
    - [Inspecting Defaults](#inspecting-defaults)
@@ -35,7 +36,7 @@ This manual explains how to use `@alloy-ts/server`, a high-performance Node.js (
 `@alloy-ts/server` provides dual paradigms for building web services backed by Rust's Rocket framework:
 
 1. **Bun/Alloy-compatible High Level API (`serve`)**: Declarative route map syntax with low-overhead handler dispatching.
-2. **Direct Rocket Control (`Rocket` / `Config` / `Route` / `HandlerBridge`)**: Direct control over Rocket's lifecycle, routes, ranks, catchers, and Figment configuration.
+2. **Direct Rocket Control (`Rocket` / `Config` / `Route` / `RouteUri` / `HandlerBridge`)**: Direct control over Rocket's lifecycle, routes, ranks, catchers, and Figment configuration.
 
 ---
 
@@ -134,7 +135,7 @@ serve(
   {
     "/": response("Home"),
   },
-  (_req) => response("Not Found", { status: 404 })
+  (_req) => response("Not Found", { status: 404 }),
 );
 ```
 
@@ -143,14 +144,10 @@ serve(
 If `port` is omitted, `serve` automatically inspects `BUN_PORT`, `PORT`, or `NODE_PORT` environment variables before defaulting to `3000`.
 
 ```ts
-serve(
-  { "/": response("OK") },
-  undefined,
-  {
-    port: 8080,
-    hostname: "127.0.0.1",
-  }
-);
+serve({ "/": response("OK") }, undefined, {
+  port: 8080,
+  hostname: "127.0.0.1",
+});
 ```
 
 ---
@@ -178,15 +175,29 @@ rocket.mount("/", "GET", "/status", async () => {
 await rocket.launch();
 ```
 
-### Custom Routes (`Route`) & Handler Outcomes (`HandlerBridge`)
+### Custom Routes (`Route`) & Route URIs (`RouteUri`)
 
-You can create explicit Rocket routes with custom ranks and handler outcomes (`success`, `error`, `forward`):
+You can create explicit Rocket routes with custom ranks and inspect their RouteURIs:
 
 ```ts
-import { Route, HandlerBridge } from "@alloy-ts/server";
+import { Route } from "@alloy-ts/server";
 
-// Ranked route
-const route = Route.ranked(1, "GET", "/api/items", (req) => {
+const route = Route.ranked(1, "GET", "/api/items");
+console.log(route.rank); // 1
+console.log(route.uri); // "/api/items"
+
+const rebased = route.mapBase("/v1");
+console.log(rebased.uri); // "/v1/api/items"
+```
+
+### Handler Outcomes (`HandlerBridge`)
+
+Express custom Rocket handler outcomes (`success`, `error`, `forward`):
+
+```ts
+import { HandlerBridge } from "@alloy-ts/server";
+
+const handler = new HandlerBridge((req) => {
   if (!req.headers.find((h) => h.name.toLowerCase() === "authorization")) {
     return HandlerBridge.forward(401);
   }
@@ -196,8 +207,6 @@ const route = Route.ranked(1, "GET", "/api/items", (req) => {
     body: Buffer.from(JSON.stringify({ items: [] })),
   });
 });
-
-console.log(route.rank, route.uri);
 ```
 
 ---
