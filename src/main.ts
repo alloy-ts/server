@@ -178,6 +178,7 @@ export const Config = native.Config;
 export const Server = native.Server;
 export const RouteMetadata = native.Route;
 export const Handler = native.Handler;
+export const RouteUri = native.RouteUri;
 
 // ---------------------------------------------------------------------------
 // App Builder Abstraction
@@ -485,6 +486,7 @@ export const Alloy = {
   Server,
   RouteMetadata,
   Handler,
+  RouteUri,
   App,
   Route,
   Get,

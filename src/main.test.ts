@@ -13,6 +13,7 @@ import {
   post,
   Response,
   RouteMetadata,
+  RouteUri,
   uri,
 } from "./main.ts";
 
@@ -52,6 +53,15 @@ test("RouteMetadata class", () => {
     expect(rankedRoute.method).toBe("POST");
     expect(rankedRoute.uri).toBe("/posts");
     expect(rankedRoute.rank).toBe(2);
+  }
+});
+
+test("RouteUri NAPI wrapper", () => {
+  if (RouteUri) {
+    const routeUri = new RouteUri("/base", "/foo/<bar>");
+    expect(routeUri.base).toBe("/base");
+    expect(routeUri.path()).toContain("/foo/");
+    expect(routeUri.asStr()).toBeDefined();
   }
 });
 
