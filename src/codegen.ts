@@ -122,6 +122,28 @@ export function catchCatcher(status: number | string) {
 
 export { catchCatcher as catch };
 
+export function FromForm(_options?: { validate?: (data: any) => boolean }) {
+  return function (target: any) {
+    return target;
+  };
+}
+
+export function Responder(_options?: { status?: number; contentType?: string }) {
+  return function (target: any) {
+    return target;
+  };
+}
+
+export function parseFormData(body: string | Buffer): Record<string, string> {
+  const str = typeof body === "string" ? body : body.toString("utf-8");
+  const params = new URLSearchParams(str);
+  const result: Record<string, string> = {};
+  for (const [key, value] of params.entries()) {
+    result[key] = value;
+  }
+  return result;
+}
+
 export function routes(items?: Function[]): RouteMetadata[] {
   if (items && items.length > 0) {
     return registeredRoutes.filter((r) => items.includes(r.handler));

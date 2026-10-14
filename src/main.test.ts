@@ -17,6 +17,7 @@ import {
   buildRouteUri,
   parseCatcherCode,
   generateRouteManifest,
+  parseFormData,
 } from "./main.ts";
 
 test("main returns Hello, world!", () => {
@@ -56,10 +57,28 @@ test("response helper function", () => {
   expect(resp2.status).toBe(201);
 });
 
-test("App class methods and server launching", () => {
-  const app = new App({ port: 0 });
+test("FromForm and parseFormData helpers", () => {
+  const parsed = parseFormData("name=Alice&role=admin");
+  expect(parsed["name"]).toBe("Alice");
+  expect(parsed["role"]).toBe("admin");
+});
 
-  app.get("/", async () => response("Hello, world!"));
+test("App class methods, middleware, and server launching", () => {
+  const app = new App({ port: 0 });
+  const logs: string[] = [];
+
+  app.use(async (_req, next) => {
+    logs.push("mw1");
+    const res = await next();
+    logs.push("mw2");
+    return res;
+  });
+
+  app.get("/", async () => {
+    logs.push("handler");
+    return response("Hello, world!");
+  });
+
   app.post("/submit", async () => response("Submitted", { status: 201 }));
 
   const server = app.launch();

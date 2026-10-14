@@ -47,18 +47,33 @@ export function response(
   return new Response(bodyStr, init);
 }
 
+export type Middleware = (
+  req: any,
+  next: () => Promise<Response> | Response,
+) => Promise<Response> | Response;
+
 export class App {
   private options: ServeOptions = {
     port: 3000,
     hostname: "0.0.0.0",
     routes: {},
   };
+  private middlewares: Middleware[] = [];
   private serverInstance?: Server;
 
   constructor(options?: ServeOptions) {
     if (options) {
       this.options = { ...this.options, ...options };
     }
+  }
+
+  use(middleware: Middleware): this {
+    this.middlewares.push(middleware);
+    return this;
+  }
+
+  attach(fairing: Middleware): this {
+    return this.use(fairing);
   }
 
   get(path: string, handler: any): this {
@@ -93,12 +108,27 @@ export class App {
     if (!this.options.routes) {
       this.options.routes = {};
     }
+
+    const wrappedHandler = async (req: any) => {
+      let idx = 0;
+      const next = async (): Promise<Response> => {
+        if (idx < this.middlewares.length) {
+          const mw = this.middlewares[idx++];
+          if (mw) {
+            return mw(req, next);
+          }
+        }
+        return handler(req);
+      };
+      return next();
+    };
+
     const current = this.options.routes[path];
     if (typeof current === "object" && current !== null && !(current instanceof Response)) {
-      current[method.toUpperCase()] = handler;
+      current[method.toUpperCase()] = wrappedHandler;
     } else {
       this.options.routes[path] = {
-        [method.toUpperCase()]: handler,
+        [method.toUpperCase()]: wrappedHandler,
       };
     }
     return this;
