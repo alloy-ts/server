@@ -8,6 +8,7 @@ use napi::bindgen_prelude::Error as NapiError;
 use napi::Status;
 use napi_derive::napi;
 
+use rocket::http::uri::Origin;
 use rocket::http::{MediaType, Method};
 use rocket::route::dummy_handler;
 use rocket::Route as RocketRoute;
@@ -31,7 +32,23 @@ impl Route {
             .parse()
             .map_err(|_| NapiError::new(Status::InvalidArg, format!("invalid HTTP method `{method}`")))?;
 
-        let route = RocketRoute::new(m, &uri, dummy_handler);
+        let uri_normalized = if uri.starts_with('/') {
+            uri.clone()
+        } else {
+            format!("/{uri}")
+        };
+
+        if Origin::parse_route(&uri_normalized).is_err() {
+            return Err(NapiError::new(
+                Status::InvalidArg,
+                format!("invalid route URI `{uri}`"),
+            ));
+        }
+
+        let route = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RocketRoute::new(m, &uri_normalized, dummy_handler)
+        }))
+        .map_err(|_| NapiError::new(Status::InvalidArg, format!("invalid route URI `{uri}`")))?;
 
         Ok(Self {
             name: route.name.map(|n| n.to_string()),
@@ -49,7 +66,23 @@ impl Route {
             .parse()
             .map_err(|_| NapiError::new(Status::InvalidArg, format!("invalid HTTP method `{method}`")))?;
 
-        let route = RocketRoute::ranked(rank.map(|r| r as isize), m, &uri, dummy_handler);
+        let uri_normalized = if uri.starts_with('/') {
+            uri.clone()
+        } else {
+            format!("/{uri}")
+        };
+
+        if Origin::parse_route(&uri_normalized).is_err() {
+            return Err(NapiError::new(
+                Status::InvalidArg,
+                format!("invalid route URI `{uri}`"),
+            ));
+        }
+
+        let route = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RocketRoute::ranked(rank.map(|r| r as isize), m, &uri_normalized, dummy_handler)
+        }))
+        .map_err(|_| NapiError::new(Status::InvalidArg, format!("invalid route URI `{uri}`")))?;
 
         Ok(Self {
             name: route.name.map(|n| n.to_string()),
