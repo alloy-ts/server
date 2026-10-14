@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Config } from "./main.ts";
+import { Config } from "../dist/index.js";
 
 test("Config initializes with debug defaults", () => {
   const config = Config.debugDefault();

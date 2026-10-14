@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { Codegen, parseRoutePattern } from "./main.ts";
+import { Codegen, parseRoutePattern } from "../dist/index.js";
 
 test("Codegen accumulates routes and generates TS code output", () => {
   const codegen = new Codegen();

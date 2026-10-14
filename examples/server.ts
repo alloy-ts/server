@@ -1,4 +1,4 @@
-import { Alloy, response, responseJson, responseRedirect } from "../src/main.ts";
+import { Alloy, response, responseJson, responseRedirect } from "../dist/index.js";
 
 // Start a high-performance HTTP server backed by Rocket NAPI bindings
 const server = Alloy.serve({

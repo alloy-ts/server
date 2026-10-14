@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { CustomHandler } from "./main.ts";
+import { CustomHandler } from "../dist/index.js";
 
 test("CustomHandler instantiates cleanly with JS callback", () => {
   const handler = new CustomHandler(async (_req: any) => {

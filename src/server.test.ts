@@ -1,5 +1,12 @@
 import { expect, test } from "vite-plus/test";
-import { Alloy, file, registerRoute, response, responseJson, responseRedirect } from "./main.ts";
+import {
+  Alloy,
+  file,
+  registerRoute,
+  response,
+  responseJson,
+  responseRedirect,
+} from "../dist/index.js";
 
 test("response constructors generate expected response objects", () => {
   const r1 = response("Hello world", {
@@ -30,8 +37,12 @@ test("Alloy.serve starts a Rocket server instance that can be stopped", async ()
   const server = Alloy.serve({
     port: 0,
     routes: {
-      "/api/health": responseJson({ status: "ok" }),
-      "/users/:id": (req: any) => response(`User ${req.params.id}`),
+      "/api/health": {
+        GET: () => responseJson({ status: "ok" }),
+      },
+      "/users/:id": {
+        GET: (req: any) => response(`User ${req.params.id}`),
+      },
     },
     fetch() {
       return response("Not Found", { status: 404 });
