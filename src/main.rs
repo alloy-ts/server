@@ -109,13 +109,7 @@ pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'
 
     let params: HashMap<String, String> = req
         .route()
-        .map(|route| {
-            route
-                .param_names()
-                .iter()
-                .filter_map(|name| req.raw_param(name).map(|v| (name.to_string(), v.to_string())))
-                .collect()
-        })
+        .map(|route| crate::server::extract_params(&route.uri.to_string(), path.as_str()))
         .unwrap_or_default();
 
     RequestPayload {

@@ -10,4 +10,7 @@
 
 mod codegen;
 mod config;
+#[allow(special_module_name)]
+mod main;
+pub mod route;
 mod server;
