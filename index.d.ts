@@ -91,6 +91,20 @@ export declare class Route {
   mapBase(base: string): void;
 }
 
+export interface HandlerOutcome {
+  status: string;
+  response?: ResponsePayload;
+  errorCode?: number;
+}
+
+export declare class Handler {
+  constructor(callback: any);
+}
+
+export declare function outcomeSuccess(response: ResponsePayload): HandlerOutcome;
+export declare function outcomeError(code: number): HandlerOutcome;
+export declare function outcomeForward(code?: number | null): HandlerOutcome;
+
 export declare function launch(config?: RocketConfig | null): Promise<void>;
 export declare function rocketMain(config?: RocketConfig | null): Promise<void>;
 

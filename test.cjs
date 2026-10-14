@@ -28,6 +28,12 @@ void test("Rocket NAPI Route", async () => {
   assert.equal(route.name, "test_route");
 });
 
+void test("Rocket NAPI Handler", async () => {
+  const { Handler, outcomeSuccess } = await import("./dist/main.mjs");
+  const handler = new Handler(() => outcomeSuccess({ status: 200, body: Buffer.from("OK") }));
+  assert.ok(handler);
+});
+
 void test("Rocket NAPI Codegen", async () => {
   const { codegen } = await import("./dist/main.mjs");
 

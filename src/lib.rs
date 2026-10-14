@@ -2,12 +2,14 @@ use napi_derive::napi;
 
 pub mod codegen;
 pub mod config;
+pub mod handler;
 pub mod rocket_main;
 pub mod route;
 pub mod server;
 
 pub use codegen::*;
 pub use config::*;
+pub use handler::*;
 pub use rocket_main::*;
 pub use route::*;
 pub use server::*;

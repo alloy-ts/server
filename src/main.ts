@@ -87,6 +87,12 @@ export interface ConfigInit {
   cliColors?: boolean;
 }
 
+export interface HandlerOutcome {
+  status: string;
+  response?: native.ResponsePayload;
+  errorCode?: number;
+}
+
 export function main(): string {
   return "Hello, world!";
 }
@@ -135,6 +141,10 @@ export const file = native.file;
 export const Config = native.Config;
 export const Rocket = native.Rocket;
 export const Route = native.Route;
+export const Handler = native.Handler;
+export const outcomeSuccess = native.outcomeSuccess;
+export const outcomeError = native.outcomeError;
+export const outcomeForward = native.outcomeForward;
 export const launch = native.launch;
 export const rocketMain = native.rocketMain;
 
@@ -273,6 +283,10 @@ export const Alloy = {
   Config,
   Rocket,
   Route,
+  Handler,
+  outcomeSuccess,
+  outcomeError,
+  outcomeForward,
   App,
   launch,
   rocketMain,
