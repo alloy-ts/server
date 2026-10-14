@@ -28,16 +28,32 @@ impl Route {
     #[napi(constructor)]
     pub fn new(method: String, uri: String) -> napi::Result<Self> {
         let m = parse_method(&method)?;
-        let route = RocketRoute::new(m, &uri, dummy_handler);
-        Ok(Self { inner: route })
+        let uri_clone = uri.clone();
+        let res = std::panic::catch_unwind(|| RocketRoute::new(m, &uri_clone, dummy_handler));
+        match res {
+            Ok(route) => Ok(Self { inner: route }),
+            Err(_) => Err(NapiError::new(
+                Status::InvalidArg,
+                format!("invalid route URI: `{uri}`"),
+            )),
+        }
     }
 
     /// Create a new route with explicit rank (or default rank if null/undefined).
     #[napi]
     pub fn ranked(rank: Option<i64>, method: String, uri: String) -> napi::Result<Self> {
         let m = parse_method(&method)?;
-        let route = RocketRoute::ranked(rank.map(|r| r as isize), m, &uri, dummy_handler);
-        Ok(Self { inner: route })
+        let uri_clone = uri.clone();
+        let res = std::panic::catch_unwind(|| {
+            RocketRoute::ranked(rank.map(|r| r as isize), m, &uri_clone, dummy_handler)
+        });
+        match res {
+            Ok(route) => Ok(Self { inner: route }),
+            Err(_) => Err(NapiError::new(
+                Status::InvalidArg,
+                format!("invalid route URI: `{uri}`"),
+            )),
+        }
     }
 
     /// The name of this route, if one was given.

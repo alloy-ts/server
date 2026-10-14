@@ -19,6 +19,7 @@ import {
   SHUTDOWN,
   CLI_COLORS,
 } from "./config.ts";
+import { Route, outcomeSuccess, outcomeError, outcomeForward } from "./main.ts";
 
 test("Config associated constants and parameter names", () => {
   expect(DEBUG_PROFILE).toBe("debug");
@@ -203,4 +204,41 @@ test("Config tlsEnabled and mtlsEnabled return boolean status", () => {
   const cfg = new Config();
   expect(typeof cfg.tlsEnabled()).toBe("boolean");
   expect(typeof cfg.mtlsEnabled()).toBe("boolean");
+});
+
+test("Route NAPI class creates routes and sets getters/setters", () => {
+  const route = new Route("GET", "/api/items");
+  expect(route.method).toBe("GET");
+  expect(route.uri).toBe("/api/items");
+  expect(route.rank).toBe(-9);
+  expect(route.name).toBeNull();
+
+  route.name = "get_items";
+  expect(route.name).toBe("get_items");
+
+  route.rank = 3;
+  expect(route.rank).toBe(3);
+
+  route.format = "json";
+  expect(route.format).toBe("application/json");
+
+  const rankedRoute = Route.ranked(2, "POST", "/submit");
+  expect(rankedRoute.method).toBe("POST");
+  expect(rankedRoute.rank).toBe(2);
+
+  expect(() => new Route("INVALID", "///")).toThrow();
+});
+
+test("HandlerOutcome helpers produce outcome objects", () => {
+  const success = outcomeSuccess("Success payload");
+  expect(success.kind).toBe("success");
+  expect(success.response?.status).toBe(200);
+
+  const error = outcomeError(403);
+  expect(error.kind).toBe("error");
+  expect(error.status).toBe(403);
+
+  const forward = outcomeForward(404);
+  expect(forward.kind).toBe("forward");
+  expect(forward.status).toBe(404);
 });

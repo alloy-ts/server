@@ -29,6 +29,10 @@ export class Response {
 export const response = native.response;
 export const responseJson = native.responseJson;
 export const responseRedirect = native.responseRedirect;
+export const outcomeSuccess = native.outcomeSuccess;
+export const outcomeError = native.outcomeError;
+export const outcomeForward = native.outcomeForward;
+export type HandlerOutcome = native.HandlerOutcome;
 export const file = native.file;
 export const registerRoute = native.registerRoute;
 export const Server = native.Server;

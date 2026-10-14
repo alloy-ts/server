@@ -113,6 +113,7 @@ pub struct ResponseInit {
 /// (see the module docs for why it is not a class) carrying the same `status` /
 /// `headers` / `body` shape that `response`, `responseJson`, `responseRedirect`
 /// produce.
+#[derive(Clone, Debug)]
 #[napi(object)]
 pub struct Response {
     pub status: u32,
