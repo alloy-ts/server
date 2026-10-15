@@ -3,6 +3,8 @@ mod codegen;
 mod config;
 mod fairing;
 mod handler;
+mod phase;
+mod rocket;
 mod route;
 mod route_uri;
 mod server;

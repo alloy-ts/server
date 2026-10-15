@@ -29,7 +29,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
-use napi::{JsFunction, JsObject, Unknown};
+use napi::bindgen_prelude::Function;
+use napi::Unknown;
 use napi_derive::napi;
 
 use rocket::config::Config;
@@ -53,22 +54,11 @@ use rocket::{Data, Shutdown};
 type HandlerTsfn =
     ThreadsafeFunction<RequestInput, Promise<ResponsePayload>, (RequestInput,), Status, true, false, 0>;
 
-/// Convert a `napi::Unknown` (received as a `#[napi]` parameter or parsed out of
-/// a JS object) into a `napi::JsFunction` so we can call
-/// `create_threadsafe_function`.
-///
-/// `JsFunction` does not implement `FromNapiValue`, so `Unknown::cast` cannot
-/// produce it. The two types share the identical `NapiValueInner` layout (an
-/// env pointer + a value pointer), so a bit-copy is sound: the napi handles are
-/// cloned into the resulting `ThreadsafeFunction`, so dropping the source
-/// `Unknown` is safe.
-#[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+fn create_tsfn(handler: Unknown) -> napi::Result<HandlerTsfn> {
+    let f = Function::from_unknown(handler)?;
+    f.build_threadsafe_function::<RequestInput>()
+        .callee_handled::<true>()
+        .build_callback(|ctx| Ok((ctx.value,)))
 }
 
 /// Wire type sent from Rust -> JS for every request, mirroring the request data
@@ -387,37 +377,41 @@ fn mount_value<'env>(
 ) -> napi::Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
-            let tsfn: HandlerTsfn =
-                f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
-                    |ctx| Ok((ctx.value,)),
-                )?;
+            let tsfn = create_tsfn(value)?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
-            let v = value.clone();
-            if let Ok(fr) = unsafe { v.clone().cast::<StaticFile>() } {
+            let obj: Object = unsafe { value.cast()? };
+            if obj.has_named_property("path")? {
+                let path: String = obj.get_named_property("path")?;
                 push_kind(
                     RouteKind::File {
-                        path: fr.path,
+                        path,
                         cache: Arc::new(Mutex::new(None)),
                     },
                     pattern,
                     methods,
                     out,
                 );
-            } else if let Ok(resp) = unsafe { v.clone().cast::<ResponsePayload>() } {
-                push_kind(RouteKind::Static(Arc::new(resp)), pattern, methods, out);
+            } else if obj.has_named_property("status")? {
+                let status: u32 = obj.get_named_property("status")?;
+                let headers: Vec<Header> = obj.get_named_property("headers").unwrap_or_default();
+                let body: Option<Vec<u8>> = obj.get_named_property("body").ok().flatten();
+                let payload = ResponsePayload { status, headers, body };
+                push_kind(RouteKind::Static(Arc::new(payload)), pattern, methods, out);
             } else {
                 // Per-method map: `{ GET, POST, ... }`.
-                let map: HashMap<String, Unknown<'env>> = unsafe { v.cast()? };
-                for (method, method_value) in map {
-                    let m: Method = method
+                let names = obj.get_property_names()?;
+                let len = names.get_array_length_unchecked()?;
+                for i in 0..len {
+                    let method_str: String = names.get_element(i)?;
+                    let method_value: Unknown<'env> = obj.get_named_property(&method_str)?;
+                    let m: Method = method_str
                         .parse()
                         .map_err(|_| {
                             napi::Error::new(
                                 Status::GenericFailure,
-                                format!("invalid method: {method}"),
+                                format!("invalid method: {method_str}"),
                             )
                         })?;
                     mount_value(method_value, pattern, &[m], out)?;
@@ -478,7 +472,7 @@ pub fn serve(
 
     let mut out: Vec<Route> = Vec::new();
     if let Some(table) = routes {
-        let table: JsObject = unsafe { table.cast()? };
+        let table: Object = unsafe { table.cast()? };
         let names = table.get_property_names()?;
         let len = names.get_array_length_unchecked()?;
         for i in 0..len {
@@ -490,12 +484,7 @@ pub fn serve(
 
     // `fetch` fallback: a catch-all for every method on any unmatched path.
     if let Some(fetch) = fetch {
-        let f = to_js_function(fetch);
-        let tsfn: HandlerTsfn =
-            f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
-                |ctx| Ok((ctx.value,)),
-            )?;
-        let tsfn = Arc::new(tsfn);
+        let tsfn = Arc::new(create_tsfn(fetch)?);
         for m in ALL_METHODS {
             push_kind(RouteKind::Fn(tsfn.clone()), "<_..>", &[*m], &mut out);
         }
@@ -580,11 +569,7 @@ fn routes() -> &'static Mutex<Vec<Route>> {
 /// [`launch`] is called, which builds and boots the Rocket instance.
 #[napi]
 pub fn register_route(method: String, path: String, handler: Unknown<'_>) -> napi::Result<()> {
-    let f = to_js_function(handler);
-    let tsfn: HandlerTsfn =
-        f.create_threadsafe_function::<RequestInput, (RequestInput,), Promise<ResponsePayload>, Status, _, true, false, 0>(
-            |ctx| Ok((ctx.value,)),
-        )?;
+    let tsfn = create_tsfn(handler)?;
     let m: Method = method
         .parse()
         .map_err(|_| napi::Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
