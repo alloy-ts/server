@@ -5,7 +5,7 @@ import {
   responseRedirect,
   file,
   Config,
-  Rocket,
+  RocketLifecycle,
   Codegen,
   buildUri,
 } from "../dist/index.js";
@@ -64,6 +64,6 @@ test("Codegen Rocket attributes parser and uri builder", () => {
 });
 
 test("Rocket server lifecycle API", () => {
-  const rocket = new Rocket({ port: 8081 });
+  const rocket = new RocketLifecycle({ port: 8081 });
   expect(rocket).toBeDefined();
 });

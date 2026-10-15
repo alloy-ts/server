@@ -108,6 +108,7 @@ fn get_query_color(query: &str) -> QueryColor {
 
 /// NAPI wrapper class for Rocket's `Route`.
 #[napi]
+#[derive(Clone)]
 pub struct Route {
     name: Option<String>,
     method: String,

@@ -1,40 +1,25 @@
-import { Get, Post, Route, Catch, routes, catchers, uri, responseJson } from "../src/main.ts";
+import { Rocket, Route, Catcher, Codegen, buildUri } from "../dist/index.js";
 
 /**
- * Demonstrates Rocket route decorators, catchers, and URI builder.
+ * Demonstrates Rocket routes, catchers, lifecycle, and URI building.
  */
-class ArticleController {
-  @Get("/articles/<id>")
-  getArticle() {
-    return responseJson({ id: "article-1", title: "Rocket Web Framework" });
-  }
+const route1 = new Route("GET", "/articles/<id>", "getArticle");
+const route2 = new Route("POST", "/articles", "createArticle");
 
-  @Post("/articles")
-  createArticle() {
-    return responseJson({ created: true });
-  }
+const catcher1 = new Catcher(404, "notFound");
 
-  @Route("PUT", "/articles/<id>")
-  updateArticle() {
-    return responseJson({ updated: true });
-  }
+const rocket = Rocket.build();
+rocket.mount("/api/v1", [route1, route2]);
+rocket.register("/api/v1", [catcher1]);
 
-  @Catch(404)
-  notFound() {
-    return responseJson({ error: "Article Not Found" }, { status: 404 });
-  }
-}
+console.log("Mounted routes count:", rocket.routes().length);
+console.log("Registered catchers count:", rocket.catchers().length);
 
-const controller = new ArticleController();
-const registeredRoutes = routes(
-  controller.getArticle,
-  controller.createArticle,
-  controller.updateArticle,
-);
-const registeredCatchers = catchers(controller.notFound);
+rocket.ignite();
+console.log("Rocket phase after ignite:", rocket.phase);
 
-console.log("Registered routes count:", registeredRoutes.length);
-console.log("Registered catchers count:", registeredCatchers.length);
-
-const articleUri = uri("/articles/<id>?<view>", { id: 101, view: "summary" }, "/v1");
+const articleUri = buildUri("/articles/<id>?<view>", { id: "101", view: "summary" }, "/v1");
 console.log("Generated type-safe URI:", articleUri);
+
+const meta = Codegen.parseRoute("GET", "/articles/<id>?<view>");
+console.log("Parsed route metadata:", meta);

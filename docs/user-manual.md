@@ -96,6 +96,20 @@ console.log(fairingInfo.name); // "Request Timer"
 // Custom handler outcome
 const outcome = createSuccessOutcome(response("Success"));
 console.log(outcome.kind); // "success"
+
+// Rocket lifecycle & phase management
+import { Rocket, Phase } from "@alloy-ts/server";
+
+const rocket = Rocket.build();
+rocket.mount("/api", [route]);
+rocket.register("/api", [catcher]);
+rocket.manage("DatabasePool");
+
+console.log(rocket.phase); // Phase.Build
+rocket.ignite();
+console.log(rocket.phase); // Phase.Ignite
+rocket.launch();
+console.log(rocket.phase); // Phase.Orbit
 ```
 
 ---

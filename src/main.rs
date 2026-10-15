@@ -21,7 +21,7 @@
 //!
 //! Note: a JS function can only be received as a *direct* `#[napi]` parameter
 //! (not nested in an object), so routes/catchers are mounted one handler at a
-//! time via [`Rocket::mount`] / [`Rocket::register`].
+//! time via [`RocketLifecycle::mount`] / [`RocketLifecycle::register`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -256,16 +256,16 @@ pub struct RocketConfig {
     pub shutdown: Option<ShutdownOptions>,
 }
 
-/// A handle to a Rocket server, mirroring `#[launch]` / `#[rocket::main]`.
-#[napi]
-pub struct Rocket {
+/// A handle to a Rocket server lifecycle, mirroring `#[launch]` / `#[rocket::main]`.
+#[napi(js_name = "RocketLifecycle")]
+pub struct RocketLifecycle {
     inner: Arc<Mutex<Option<RocketServer<Build>>>>,
     shutdown: Arc<Mutex<Option<Shutdown>>>,
 }
 
 #[napi]
-impl Rocket {
-    /// Create a new Rocket instance from the given configuration.
+impl RocketLifecycle {
+    /// Create a new RocketLifecycle instance from the given configuration.
     #[napi(constructor)]
     pub fn new(config: Option<RocketConfig>) -> Result<Self> {
         let mut cfg = Config::default();
@@ -314,9 +314,6 @@ impl Rocket {
     }
 
     /// Mount a single `handler` for `method` at `path` under `base`.
-    /// Equivalent to `rocket.mount(base, vec![Route::new(method, path, handler)])`.
-    ///
-    /// `handler` is `(err: null, req: RequestPayload) => ResponsePayload | Promise<ResponsePayload>`.
     #[napi]
     #[allow(deprecated)]
     pub fn mount(&self, base: String, method: String, path: String, handler: Unknown) -> Result<()> {
@@ -334,9 +331,7 @@ impl Rocket {
         Ok(())
     }
 
-    /// Register a single catcher `handler`. `code` is the HTTP status it handles
-    /// (in `[400, 600)`); pass `None` for the default catcher.
-    /// Equivalent to `rocket.register(base, vec![Catcher::new(code, handler)])`.
+    /// Register a single catcher `handler`.
     #[napi]
     #[allow(deprecated)]
     pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
@@ -353,15 +348,6 @@ impl Rocket {
     }
 
     /// Ignite and launch this server, resolving when the server shuts down.
-    ///
-    /// This mirrors the generated `main` from `#[launch]`:
-    ///
-    /// ```rust,no_run
-    /// #[rocket::main]
-    /// async fn main() {
-    ///     let _ = rocket().launch().await;
-    /// }
-    /// ```
     #[napi]
     pub async fn launch(&self) -> Result<()> {
         let rocket = {
@@ -399,11 +385,11 @@ impl Rocket {
 /// launch, and resolve once the server shuts down.
 #[napi]
 pub async fn launch(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
+    RocketLifecycle::new(config)?.launch().await
 }
 
 /// Mirror of `#[rocket::main]`'s inspectable form: ignite, launch, resolve.
 #[napi]
 pub async fn rocket_main(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
+    RocketLifecycle::new(config)?.launch().await
 }

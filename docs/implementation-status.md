@@ -9,7 +9,7 @@ This document provides a review and status summary of Rocket web framework NAPI 
 - **`Alloy.serve` (Bun/Alloy compatible API):** Supports static routes, dynamic parameter routes (`:id` and `<param>`), per-method handler maps (`{ GET, POST }`), wildcard prefix routes (`/api/*` mapped to `<_..>`), redirects via `Response.redirect()`, and lazy static file serving via `Alloy.file()`.
 - **Standalone Tokio Runtime:** Rocket executes on its own multi-threaded Tokio runtime in background threads, so it does not block the Node.js event loop or require a surrounding Tokio reactor.
 - **Threadsafe Handler Execution:** JavaScript route handlers execute via `napi::threadsafe_function` (`ThreadsafeFunction`), supporting async JS handlers that resolve `Promise<Response>`.
-- **`Rocket` Lifecycle Class:** Exposes `new Rocket(config)`, `mount(base, method, path, handler)`, `register(base, code, handler)`, `launch()`, and `shutdown()`.
+- **`Rocket` Class & Phase Management:** Exposes `Rocket.build()`, `Rocket.custom(config)`, `new Rocket(config)`, `Rocket.execute()`, `mount(base, routes)`, `register(base, catchers)`, `manage(state)`, `attach(fairing)`, `ignite()`, `launch()`, and `shutdown()`. Exposes application lifecycle phase state via `Phase` string enum (`Build`, `Ignite`, `Orbit`).
 
 ### 2. Rocket Route, RouteUri, Catcher & Ranking (`Route`, `RouteUri`, `Catcher`, `computeDefaultRank`, `HandlerOutcome`)
 

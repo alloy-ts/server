@@ -1,4 +1,4 @@
-import { Config, Rocket, responseJson } from "../src/main.ts";
+import { Config, Rocket } from "../dist/index.js";
 
 /**
  * Demonstrates configuring Rocket via the NAPI Config class.
@@ -27,18 +27,10 @@ console.log(`- Address: ${config.address}:${config.port}`);
 console.log(`- Workers: ${config.workers}`);
 console.log(`- JSON limit: ${config.limits.limits["json"]}`);
 
-const rocket = new Rocket({
+const rocket = Rocket.custom({
   port: config.port,
   address: config.address,
   workers: config.workers,
 });
 
-rocket.mount("/", "GET", "/config", () => {
-  return responseJson({
-    port: config.port,
-    address: config.address,
-    workers: config.workers,
-  });
-});
-
-console.log(`Configured Rocket ready on port ${config.port}`);
+console.log(`Configured Rocket ready on port ${rocket.config.port}`);

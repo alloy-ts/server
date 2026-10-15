@@ -7,6 +7,7 @@ use napi_derive::napi;
 
 /// NAPI mirror of Rocket's `Catcher`.
 #[napi]
+#[derive(Clone)]
 pub struct Catcher {
     name: Option<String>,
     base: String,

@@ -218,6 +218,7 @@ fn build_tls(napi: &TlsConfig) -> napi::Result<RocketTlsConfig> {
 // ---------------------------------------------------------------------------
 
 #[napi]
+#[derive(Clone)]
 pub struct Config {
     profile: Option<String>,
     address: String,
