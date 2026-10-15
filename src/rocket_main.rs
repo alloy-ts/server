@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
-use napi::threadsafe_function::ThreadsafeFunction;
+use napi::threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction};
 #[allow(deprecated)]
 use napi::{JsFunction, Unknown};
 use napi_derive::napi;
@@ -36,6 +36,19 @@ pub struct RequestPayload {
     pub params: Option<HashMap<String, String>>,
     /// Raw request body, or `undefined` when the request carries no body.
     pub body: Option<Buffer>,
+}
+
+impl Clone for RequestPayload {
+    fn clone(&self) -> Self {
+        RequestPayload {
+            method: self.method.clone(),
+            path: self.path.clone(),
+            query: self.query.clone(),
+            headers: self.headers.clone(),
+            params: self.params.clone(),
+            body: self.body.as_ref().map(|b| Buffer::from(b.as_ref())),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -100,14 +113,19 @@ pub(crate) async fn build_request_payload(
         .route()
         .map(|route| {
             let mut map = HashMap::new();
-            let path_str = route.uri.path().to_string();
-            for (path_idx, segment) in path_str.split('/').filter(|s| !s.is_empty()).enumerate() {
-                if segment.starts_with('<') && segment.ends_with('>') {
-                    let name = segment
-                        .trim_matches('<')
-                        .trim_matches('>')
-                        .trim_end_matches("..");
-                    if let Some(val) = req.routed_segment(path_idx) {
+            let route_path = route.uri.path().to_string();
+            let req_path = req.uri().path().to_string();
+            let route_segs: Vec<&str> = route_path.split('/').filter(|s| !s.is_empty()).collect();
+            let req_segs: Vec<&str> = req_path.split('/').filter(|s| !s.is_empty()).collect();
+            for (i, r_seg) in route_segs.iter().enumerate() {
+                if r_seg.starts_with('<') && r_seg.ends_with('>') {
+                    let name = r_seg.trim_matches('<').trim_matches('>').trim_end_matches("..");
+                    if r_seg.ends_with("..>") {
+                        if i < req_segs.len() {
+                            let rest = req_segs[i..].join("/");
+                            map.insert(name.to_string(), rest);
+                        }
+                    } else if let Some(&val) = req_segs.get(i) {
                         map.insert(name.to_string(), val.to_string());
                     }
                 }
@@ -140,7 +158,7 @@ pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
     }
 
     if let Some(body) = resp.body {
-        let bytes: Vec<u8> = body.to_vec();
+        let bytes: Vec<u8> = body.as_ref().to_vec();
         builder.sized_body(bytes.len(), std::io::Cursor::new(bytes));
     }
 
@@ -157,6 +175,53 @@ pub(crate) fn to_js_function(handler: Unknown) -> JsFunction {
         std::mem::size_of::<JsFunction>()
     );
     unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
+}
+
+#[allow(deprecated)]
+pub(crate) fn wrap_js_handler(env: &Env, val: Unknown) -> Result<JsFunction> {
+    let script = r#"
+    (fn) => (...args) => {
+        function formatRes(res) {
+            if (!res) return { status: 200, headers: [], body: null };
+            if (typeof res === "string") return { status: 200, headers: [], body: Buffer.from(res) };
+            if (Buffer.isBuffer(res) || res instanceof Uint8Array) return { status: 200, headers: [], body: res };
+
+            let status = res.status ?? 200;
+            let headers = Array.isArray(res.headers) ? res.headers : [];
+            let body = res.body;
+            if (body) {
+                if (typeof body === "string") {
+                    body = Buffer.from(body);
+                } else if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
+                    body = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+                }
+            }
+            return { status: status, headers: headers, body: body };
+        }
+
+        try {
+            let request = null;
+            for (const arg of args) {
+                if (!arg) continue;
+                if (arg.method) { request = arg; break; }
+                if (Array.isArray(arg) && arg[0] && arg[0].method) { request = arg[0]; break; }
+            }
+            let res = fn(request);
+            if (res && typeof res.then === "function") {
+                return res.then(formatRes).catch(e => ({ status: 500, headers: [], body: Buffer.from(String(e)) }));
+            }
+            return formatRes(res);
+        } catch (e) {
+            return { status: 500, headers: [], body: Buffer.from(String(e)) };
+        }
+    }
+    "#;
+    let wrap_creator: Unknown = env.run_script(script)?;
+    let wrap_creator_fn: JsFunction = unsafe { std::mem::transmute_copy(&wrap_creator) };
+    let js_fn = to_js_function(val);
+    let wrapped: Unknown = wrap_creator_fn.call(None, &[&js_fn])?;
+    let wrapped_fn: JsFunction = unsafe { std::mem::transmute_copy(&wrapped) };
+    Ok(wrapped_fn)
 }
 
 // ---------------------------------------------------------------------------
@@ -279,11 +344,12 @@ impl Rocket {
 
     #[napi]
     #[allow(deprecated)]
-    pub fn mount(&self, base: String, method: String, path: String, handler: Unknown) -> Result<()> {
+    pub fn mount(&self, env: Env, base: String, method: String, path: String, handler: Unknown) -> Result<()> {
         let method: Method = method
             .parse()
             .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let wrapped_fn = wrap_js_handler(&env, handler)?;
+        let tsfn: HandlerTsfn = wrapped_fn.create_threadsafe_function(|ctx: ThreadsafeCallContext<(RequestPayload,)>| Ok(ctx.value))?;
         let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();
@@ -296,9 +362,10 @@ impl Rocket {
 
     #[napi]
     #[allow(deprecated)]
-    pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
+    pub fn register(&self, env: Env, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
         let code: Option<u16> = code.map(|c| c as u16);
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
+        let wrapped_fn = wrap_js_handler(&env, handler)?;
+        let tsfn: HandlerTsfn = wrapped_fn.create_threadsafe_function(|ctx: ThreadsafeCallContext<(RequestPayload,)>| Ok(ctx.value))?;
         let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
 
         let mut guard = self.inner.lock().unwrap();

@@ -12,7 +12,8 @@ use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
 use rocket::{Config, Data, Request, Shutdown};
 
 use crate::rocket_main::{
-    build_request_payload, build_response, to_js_function, HandlerTsfn, JsHeader, ResponsePayload,
+    build_request_payload, build_response, wrap_js_handler, HandlerTsfn, JsHeader,
+    ResponsePayload,
 };
 
 fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
@@ -312,11 +313,11 @@ fn push_kind(kind: RouteKind, pattern: &str, methods: &[Method], out: &mut Vec<R
     }
 }
 
-fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<Route>) -> Result<()> {
+fn mount_value(env: &Env, value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<Route>) -> Result<()> {
     match value.get_type()? {
         ValueType::Function => {
-            let f = to_js_function(value);
-            let tsfn: HandlerTsfn = f.create_threadsafe_function(|ctx| Ok(ctx.value))?;
+            let wrapped_fn = wrap_js_handler(env, value)?;
+            let tsfn: HandlerTsfn = wrapped_fn.create_threadsafe_function(|ctx| Ok(ctx.value))?;
             push_kind(RouteKind::Fn(Arc::new(tsfn)), pattern, methods, out);
         }
         ValueType::Object => {
@@ -358,7 +359,7 @@ fn mount_value(value: Unknown, pattern: &str, methods: &[Method], out: &mut Vec<
                     let m: Method = method_str
                         .parse()
                         .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method_str}")))?;
-                    mount_value(method_val, pattern, &[m], out)?;
+                    mount_value(env, method_val, pattern, &[m], out)?;
                 }
             }
         }
@@ -382,7 +383,7 @@ fn reserve_ephemeral_port() -> Result<u16> {
 // ---------------------------------------------------------------------------
 
 #[napi]
-pub fn serve(options: Object) -> Result<Server> {
+pub fn serve(env: Env, options: Object) -> Result<Server> {
     let port: Option<u32> = options.get_named_property("port").ok().flatten();
     let hostname: Option<String> = options.get_named_property("hostname").ok().flatten();
     let unix: Option<String> = options.get_named_property("unix").ok().flatten();
@@ -418,7 +419,7 @@ pub fn serve(options: Object) -> Result<Server> {
         for i in 0..len {
             let pattern: String = keys.get_element(i)?;
             let value: Unknown = table.get_named_property(&pattern)?;
-            mount_value(value, &pattern, ALL_METHODS, &mut routes)?;
+            mount_value(&env, value, &pattern, ALL_METHODS, &mut routes)?;
         }
     }
     if !routes.is_empty() {
@@ -428,8 +429,8 @@ pub fn serve(options: Object) -> Result<Server> {
     let fetch_prop: Option<Unknown> = options.get_named_property("fetch").ok().flatten();
     let fetch_tsfn: Option<Arc<HandlerTsfn>> = match fetch_prop {
         Some(val) if val.get_type()? == ValueType::Function => {
-            let f = to_js_function(val);
-            Some(Arc::new(f.create_threadsafe_function(|ctx| Ok(ctx.value))?))
+            let wrapped_fn = wrap_js_handler(&env, val)?;
+            Some(Arc::new(wrapped_fn.create_threadsafe_function(|ctx| Ok(ctx.value))?))
         }
         _ => None,
     };

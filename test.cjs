@@ -5,13 +5,8 @@ test.after(() => {
   setImmediate(() => process.exit(0));
 });
 
-void test("main() returns Hello, world!", async () => {
-  const { main } = await import("./dist/main.mjs");
-  assert.equal(main(), "Hello, world!");
-});
-
 void test("Rocket NAPI Config", async () => {
-  const { Config } = await import("./dist/main.mjs");
+  const { Config } = await import("./index.js");
   const cfg = new Config();
   assert.equal(typeof cfg.port, "number");
   cfg.port = 8080;
@@ -19,7 +14,7 @@ void test("Rocket NAPI Config", async () => {
 });
 
 void test("Rocket NAPI Route", async () => {
-  const { Route } = await import("./dist/main.mjs");
+  const { Route } = await import("./index.js");
   const route = new Route("GET", "/test/<id>", () => {});
   assert.equal(route.method, "GET");
   assert.equal(route.uri, "/test/<id>");
@@ -29,7 +24,7 @@ void test("Rocket NAPI Route", async () => {
 });
 
 void test("Rocket NAPI RouteUri", async () => {
-  const { RouteUri } = await import("./dist/main.mjs");
+  const { RouteUri } = await import("./index.js");
   const routeUri = new RouteUri("/base", "/foo/<bar>?a=1");
   assert.equal(routeUri.base, "/base");
   assert.equal(routeUri.unmountedOrigin, "/foo/<bar>?a=1");
@@ -40,34 +35,36 @@ void test("Rocket NAPI RouteUri", async () => {
 });
 
 void test("Rocket NAPI Handler", async () => {
-  const { Handler, outcomeSuccess } = await import("./dist/main.mjs");
+  const { Handler, outcomeSuccess } = await import("./index.js");
   const handler = new Handler(() => outcomeSuccess({ status: 200, body: Buffer.from("OK") }));
   assert.ok(handler);
 });
 
 void test("Rocket NAPI Codegen", async () => {
-  const { codegen } = await import("./dist/main.mjs");
+  const { generateRoute, generateCatcher, generateUri, generateTsDeclarations } = await import(
+    "./index.js"
+  );
 
-  const route = codegen.get("/users/:id", { name: "get_user" });
+  const route = generateRoute({ method: "GET", uri: "/users/:id", name: "get_user" });
   assert.equal(route.method, "GET");
   assert.equal(route.path, "/users/:id");
   assert.equal(route.rocketPath, "/users/<id>");
   assert.equal(route.name, "get_user");
 
-  const catcher = codegen.catch(404, "not_found");
+  const catcher = generateCatcher(404, "not_found");
   assert.equal(catcher.code, 404);
   assert.equal(catcher.name, "not_found");
 
-  const uri = codegen.uri("/person/:name", { name: "Alice", age: "30" });
+  const uri = generateUri("/person/:name", { name: "Alice", age: "30" });
   assert.equal(uri.uri, "/person/Alice?age=30");
 
-  const tsDecl = codegen.generateTsDeclarations([route]);
+  const tsDecl = generateTsDeclarations([route]);
   assert.ok(tsDecl.includes("export interface RocketRoutes"));
   assert.ok(tsDecl.includes("GET /users/:id"));
 });
 
 void test("Alloy serve HTTP server", async () => {
-  const { serve, Response } = await import("./dist/main.mjs");
+  const { serve, Response } = await import("./index.js");
 
   const server = serve({
     port: 0,
