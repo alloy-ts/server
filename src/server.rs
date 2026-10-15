@@ -322,7 +322,7 @@ const ALL_METHODS: &[Method] = &[
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> napi::Result<JsFunction> {
     if handler.get_type()? == ValueType::Function {
-        Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
+        Ok(unsafe { std::mem::transmute::<Unknown, JsFunction>(handler) })
     } else {
         Err(napi::Error::new(
             Status::InvalidArg,

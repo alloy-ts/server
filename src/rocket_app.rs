@@ -139,7 +139,7 @@ type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
 #[allow(deprecated)]
 fn to_js_function(handler: Unknown) -> Result<JsFunction> {
     if handler.get_type()? == ValueType::Function {
-        Ok(unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) })
+        Ok(unsafe { std::mem::transmute::<Unknown, JsFunction>(handler) })
     } else {
         Err(Error::new(
             Status::InvalidArg,

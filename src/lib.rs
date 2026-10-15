@@ -9,6 +9,7 @@
 
 mod catcher;
 mod codegen;
+mod compiler;
 mod config;
 mod handler;
 mod rocket_app;
@@ -18,6 +19,7 @@ mod server;
 
 pub use catcher::*;
 pub use codegen::*;
+pub use compiler::*;
 pub use config::*;
 pub use handler::*;
 pub use rocket_app::{rocket_main, Rocket, RocketConfig};
