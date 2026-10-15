@@ -11,10 +11,15 @@ use rocket::Route as RocketRoute;
 #[napi]
 #[derive(Clone, Debug)]
 pub struct Route {
+    #[napi]
     pub name: Option<String>,
+    #[napi]
     pub method: String,
+    #[napi]
     pub uri: String,
+    #[napi]
     pub rank: i32,
+    #[napi]
     pub format: Option<String>,
 }
 
