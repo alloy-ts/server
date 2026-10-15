@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { RouteUri } from "./index.ts";
+import { RouteUri } from "../dist/index.js";
 
 describe("Rocket RouteUri NAPI Bindings", () => {
   test("creates a RouteUri with base and origin", () => {

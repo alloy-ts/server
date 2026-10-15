@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Route } from "./index.ts";
+import { Route } from "../dist/index.js";
 
 describe("Rocket Route NAPI Bindings", () => {
   test("creates a new route with default computed rank", () => {

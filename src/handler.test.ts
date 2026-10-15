@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
-import { response, routeOutcomeError, routeOutcomeForward, routeOutcomeSuccess } from "./index.ts";
-import type { HandlerOutcomeKind } from "./index.ts";
+import {
+  response,
+  routeOutcomeError,
+  routeOutcomeForward,
+  routeOutcomeSuccess,
+} from "../dist/index.js";
+import type { HandlerOutcomeKind } from "../dist/index.js";
 
 describe("Rocket Handler NAPI Bindings", () => {
   test("routeOutcomeSuccess creates a Success outcome with response", () => {
