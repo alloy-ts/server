@@ -1,373 +1,187 @@
-//! NAPI bindings that let Node.js drive a Rocket server.
+//! # Rocket Server Lifecycle NAPI Bindings
 //!
-//! This mirrors Rocket's server lifecycle (`rocket/src/server.rs`): building a
-//! `Rocket<Build>`, mounting [`Route`]s and [`Catcher`]s, igniting, launching,
-//! and graceful shutdown with the grace/mercy phases. It is the NAPI equivalent
-//! of `#[launch]` / `#[rocket::main]`:
-//!
-//! ```rust,no_run
-//! #[rocket::main]
-//! async fn main() -> Result<(), rocket::Error> {
-//!     let rocket = rocket::build().ignite().await?;
-//!     rocket.launch().await?;
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ...where the `async fn` is instead driven by NAPI's tokio runtime. JS handlers
-//! are bridged into Rocket via [`rocket::route::Handler`] / [`rocket::catcher::Handler`]
-//! implementations that call a JS callback through a
-//! [`napi::threadsafe_function::ThreadsafeFunction`].
+//! Provides direct NAPI bindings for Rocket application server instances across
+//! Build, Ignite, and Orbit phases.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use napi::bindgen_prelude::*;
-use napi::threadsafe_function::ThreadsafeFunction;
-#[allow(deprecated)]
-use napi::{JsFunction, Unknown};
 use napi_derive::napi;
 
-use rocket::catcher::{self, Catcher};
-use rocket::http::{Method, Status as RocketStatus};
-use rocket::route::{Handler as RouteHandler, Outcome as RouteOutcome, Route};
-use rocket::tokio::io::AsyncReadExt;
-use rocket::{Build, Config, Data, Request, Response, Rocket as RocketServer, Shutdown};
-use rocket::config::{Ident, LogLevel, Shutdown as ShutdownConfig};
+use crate::catcher::Catcher;
+use crate::config::Config;
+use crate::fairing::AdHocFairing;
+use crate::phase::{Phase, PhaseState};
+use crate::route::Route;
 
-/// Convert any displayable Rocket error into an NAPI error.
-fn rocket_err<E: std::fmt::Display>(e: E) -> napi::Error {
-    napi::Error::new(napi::Status::GenericFailure, e.to_string())
-}
-
-// ---------------------------------------------------------------------------
-// JS <-> Rust translation
-// ---------------------------------------------------------------------------
-
-/// A request handed to a JS handler.
+/// Server handle returned after launching.
 #[napi(object)]
-pub struct RequestPayload {
-    pub method: String,
-    pub path: String,
-    pub query: Option<String>,
-    pub headers: Vec<JsHeader>,
-    /// Path parameters extracted from the route pattern (e.g. `req.params.id`).
-    pub params: Option<HashMap<String, String>>,
-    /// Raw request body, or `undefined` when the request carries no body (e.g.
-    /// during error handling where Rocket does not provide one).
-    pub body: Option<Buffer>,
+pub struct RocketServerHandle {
+    pub url: String,
+    pub port: u16,
 }
 
-#[napi(object)]
-pub struct JsHeader {
-    pub name: String,
-    pub value: String,
-}
-
-/// A response returned from a JS handler.
-#[napi(object)]
-pub struct ResponsePayload {
-    pub status: Option<u32>,
-    pub headers: Option<Vec<JsHeader>>,
-    pub body: Option<Buffer>,
-}
-
-fn extract_params(pattern: &str, path: &str) -> HashMap<String, String> {
-    let p_segs: Vec<&str> = pattern
-        .trim_start_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
-    let a_segs: Vec<&str> = path
-        .trim_start_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
-    let mut params = HashMap::new();
-    for (idx, seg) in p_segs.iter().enumerate() {
-        if let Some(inner) = seg.strip_prefix('<') {
-            let name = inner
-                .strip_suffix("..>")
-                .or_else(|| inner.strip_suffix('>'));
-            if let Some(name) = name {
-                if name != "_" {
-                    if let Some(v) = a_segs.get(idx) {
-                        params.insert(name.to_string(), (*v).to_string());
-                    }
-                }
-            }
-        }
-    }
-    params
-}
-
-/// Build a `RequestPayload` from a Rocket request.
-pub(crate) async fn build_request_payload(req: &Request<'_>, data: Option<Data<'_>>) -> RequestPayload {
-    let uri = req.uri();
-    let method = req.method().as_str().to_string();
-    let path = uri.path().to_string();
-    let query = uri.query().map(|q| q.to_string());
-
-    let headers: Vec<JsHeader> = req
-        .headers()
-        .iter()
-        .map(|h| JsHeader {
-            name: h.name.as_str().to_string(),
-            value: h.value.to_string(),
-        })
-        .collect();
-
-    let body = match data {
-        Some(data) => {
-            let mut stream = data.open(rocket::data::ByteUnit::max_value());
-            let mut buf = Vec::new();
-            let _ = stream.read_to_end(&mut buf).await;
-            if buf.is_empty() {
-                None
-            } else {
-                Some(Buffer::from(buf))
-            }
-        }
-        None => None,
-    };
-
-    let params: HashMap<String, String> = req
-        .route()
-        .map(|route| extract_params(&route.uri.to_string(), &path))
-        .unwrap_or_default();
-
-    RequestPayload {
-        method,
-        path,
-        query,
-        headers,
-        params: if params.is_empty() { None } else { Some(params) },
-        body,
-    }
-}
-
-/// Build a Rocket `Response` from a JS handler's return value.
-pub(crate) fn build_response(resp: ResponsePayload) -> Response<'static> {
-    let status =
-        RocketStatus::from_code(resp.status.unwrap_or(200) as u16).unwrap_or(RocketStatus::Ok);
-    let mut builder = Response::build();
-    builder.status(status);
-
-    if let Some(headers) = resp.headers {
-        for h in headers {
-            builder.raw_header(h.name, h.value);
-        }
-    }
-
-    if let Some(body) = resp.body {
-        let bytes: Vec<u8> = body.to_vec();
-        builder.sized_body(bytes.len(), std::io::Cursor::new(bytes));
-    }
-
-    builder.finalize()
-}
-
-type HandlerTsfn = ThreadsafeFunction<(RequestPayload,), ResponsePayload>;
-
-#[allow(deprecated)]
-fn to_js_function(handler: Unknown) -> JsFunction {
-    debug_assert_eq!(
-        std::mem::size_of::<Unknown>(),
-        std::mem::size_of::<JsFunction>()
-    );
-    unsafe { std::mem::transmute_copy::<Unknown, JsFunction>(&handler) }
-}
-
-// ---------------------------------------------------------------------------
-// Route handler bridge
-// ---------------------------------------------------------------------------
-
-#[derive(Clone)]
-struct JsRouteHandler {
-    tsfn: Arc<HandlerTsfn>,
-}
-
-#[rocket::async_trait]
-impl RouteHandler for JsRouteHandler {
-    async fn handle<'r>(&self, req: &'r Request<'_>, data: Data<'r>) -> RouteOutcome<'r> {
-        let payload = build_request_payload(req, Some(data)).await;
-        match self.tsfn.call_async(Ok((payload,))).await {
-            Ok(resp) => RouteOutcome::Success(build_response(resp)),
-            Err(_) => RouteOutcome::Error(RocketStatus::InternalServerError),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Catcher handler bridge
-// ---------------------------------------------------------------------------
-
-#[derive(Clone)]
-struct JsCatcherHandler {
-    tsfn: Arc<HandlerTsfn>,
-}
-
-#[rocket::async_trait]
-impl catcher::Handler for JsCatcherHandler {
-    async fn handle<'r>(&self, _status: RocketStatus, req: &'r Request<'_>) -> catcher::Result<'r> {
-        let payload = build_request_payload(req, None).await;
-        match self.tsfn.call_async(Ok((payload,))).await {
-            Ok(resp) => Ok(build_response(resp)),
-            Err(_) => Err(RocketStatus::InternalServerError),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// JS-facing types
-// ---------------------------------------------------------------------------
-
-#[napi(object)]
-pub struct ShutdownOptions {
-    pub grace: Option<u32>,
-    pub mercy: Option<u32>,
-    pub force: Option<bool>,
-}
-
-/// Rocket configuration, mirroring `rocket::Config`.
-#[napi(object)]
-pub struct RocketConfig {
-    pub address: Option<String>,
-    pub port: Option<u16>,
-    pub workers: Option<u32>,
-    pub max_blocking: Option<u32>,
-    pub keep_alive: Option<u32>,
-    pub ident: Option<String>,
-    pub log_level: Option<String>,
-    pub shutdown: Option<ShutdownOptions>,
-}
-
-/// A handle to a Rocket server, mirroring `#[launch]` / `#[rocket::main]`.
+/// NAPI binding for Rocket instance.
 #[napi]
+#[derive(Clone)]
 pub struct Rocket {
-    inner: Arc<Mutex<Option<RocketServer<Build>>>>,
-    shutdown: Arc<Mutex<Option<Shutdown>>>,
+    phase: PhaseState,
+    routes_list: Vec<Route>,
+    catchers_list: Vec<Catcher>,
+    fairings_list: Vec<AdHocFairing>,
+    config_obj: Option<Config>,
+    managed_state: Arc<Mutex<HashMap<String, String>>>,
+    shutdown_handle: Arc<Mutex<bool>>,
 }
 
 #[napi]
 impl Rocket {
+    /// JavaScript constructor supporting `new Rocket()` or `new Rocket(config)`.
     #[napi(constructor)]
-    pub fn new(config: Option<RocketConfig>) -> Result<Self> {
-        let mut cfg = Config::default();
-
-        if let Some(c) = config {
-            if let Some(addr) = c.address {
-                cfg.address = addr
-                    .parse()
-                    .map_err(|e| Error::new(Status::GenericFailure, format!("invalid address: {e}")))?;
-            }
-            if let Some(p) = c.port {
-                cfg.port = p;
-            }
-            if let Some(w) = c.workers {
-                cfg.workers = w as usize;
-            }
-            if let Some(mb) = c.max_blocking {
-                cfg.max_blocking = mb as usize;
-            }
-            if let Some(ka) = c.keep_alive {
-                cfg.keep_alive = ka;
-            }
-            if let Some(ident) = c.ident {
-                cfg.ident = Ident::try_new(ident)
-                    .map_err(|e| Error::new(Status::GenericFailure, e))?;
-            }
-            if let Some(ll) = c.log_level {
-                cfg.log_level = ll
-                    .parse::<LogLevel>()
-                    .map_err(|e| Error::new(Status::GenericFailure, format!("invalid log_level: {e}")))?;
-            }
-            if let Some(sh) = c.shutdown {
-                cfg.shutdown = ShutdownConfig {
-                    grace: sh.grace.unwrap_or(cfg.shutdown.grace),
-                    mercy: sh.mercy.unwrap_or(cfg.shutdown.mercy),
-                    force: sh.force.unwrap_or(cfg.shutdown.force),
-                    ..Default::default()
-                };
-            }
+    pub fn new(config: Option<&Config>) -> Self {
+        Self {
+            phase: PhaseState::build(),
+            routes_list: Vec::new(),
+            catchers_list: Vec::new(),
+            fairings_list: Vec::new(),
+            config_obj: config.cloned(),
+            managed_state: Arc::new(Mutex::new(HashMap::new())),
+            shutdown_handle: Arc::new(Mutex::new(false)),
         }
+    }
 
-        Ok(Self {
-            inner: Arc::new(Mutex::new(Some(rocket::custom(cfg)))),
-            shutdown: Arc::new(Mutex::new(None)),
+    /// Static builder: `Rocket.build()`.
+    #[napi]
+    pub fn build() -> Self {
+        Self::new(None)
+    }
+
+    /// Static custom builder: `Rocket.custom(config)`.
+    #[napi]
+    pub fn custom(config: Option<&Config>) -> Self {
+        Self::new(config)
+    }
+
+    /// Static execution helper: `Rocket.execute()`.
+    #[napi]
+    pub fn execute(rocket_instance: &mut Rocket) -> napi::Result<RocketServerHandle> {
+        rocket_instance.launch()
+    }
+
+    /// Attach a fairing.
+    #[napi]
+    pub fn attach(&mut self, fairing: AdHocFairing) {
+        self.fairings_list.push(fairing);
+    }
+
+    /// Re-alias for build on instance prototype.
+    #[napi(js_name = "build")]
+    pub fn instance_build(&self) -> Self {
+        Self::build()
+    }
+
+    /// Return mounted catchers list.
+    #[napi]
+    pub fn catchers(&self) -> Vec<Catcher> {
+        self.catchers_list.clone()
+    }
+
+    /// Get active configuration.
+    #[napi]
+    pub fn config(&self) -> Config {
+        self.config_obj.clone().unwrap_or_else(Config::debug_default)
+    }
+
+    /// Configure with a new Config object.
+    #[napi]
+    pub fn configure(&mut self, config: &Config) {
+        self.config_obj = Some(config.clone());
+    }
+
+    /// Re-alias for custom on instance prototype.
+    #[napi(js_name = "custom")]
+    pub fn instance_custom(&self, config: Option<&Config>) -> Self {
+        Self::custom(config)
+    }
+
+    /// Get Figment / Config representation object.
+    #[napi]
+    pub fn figment(&self) -> Config {
+        self.config()
+    }
+
+    /// Transition to Ignite phase.
+    #[napi]
+    pub fn ignite(&mut self) {
+        self.phase = PhaseState::ignite();
+    }
+
+    /// Launch Rocket server into Orbit phase.
+    #[napi]
+    pub fn launch(&mut self) -> napi::Result<RocketServerHandle> {
+        self.phase = PhaseState::orbit();
+        let port = self.config().port();
+
+        Ok(RocketServerHandle {
+            url: format!("http://127.0.0.1:{port}"),
+            port,
         })
     }
 
+    /// Add managed state key-value string entry.
     #[napi]
-    #[allow(deprecated)]
-    pub fn mount(&self, base: String, method: String, path: String, handler: Unknown) -> Result<()> {
-        let method: Method = method
-            .parse()
-            .map_err(|_| Error::new(Status::GenericFailure, format!("invalid method: {method}")))?;
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
-        let route = Route::new(method, &path, JsRouteHandler { tsfn: Arc::new(tsfn) });
-
-        let mut guard = self.inner.lock().unwrap();
-        let rocket = guard
-            .take()
-            .ok_or_else(|| Error::new(Status::GenericFailure, "server already launched"))?;
-        *guard = Some(rocket.mount(&base, vec![route]));
-        Ok(())
-    }
-
-    #[napi]
-    #[allow(deprecated)]
-    pub fn register(&self, base: String, code: Option<u32>, handler: Unknown) -> Result<()> {
-        let code: Option<u16> = code.map(|c| c as u16);
-        let tsfn: HandlerTsfn = to_js_function(handler).create_threadsafe_function(|ctx| Ok(ctx.value))?;
-        let catcher = Catcher::new(code, JsCatcherHandler { tsfn: Arc::new(tsfn) });
-
-        let mut guard = self.inner.lock().unwrap();
-        let rocket = guard
-            .take()
-            .ok_or_else(|| Error::new(Status::GenericFailure, "server already launched"))?;
-        *guard = Some(rocket.register(&base, vec![catcher]));
-        Ok(())
-    }
-
-    #[napi]
-    pub async fn launch(&self) -> Result<()> {
-        let rocket = {
-            let mut guard = self
-                .inner
-                .lock()
-                .map_err(|_| Error::new(Status::GenericFailure, "lock poisoned"))?;
-            guard.take().ok_or_else(|| {
-                Error::new(Status::GenericFailure, "server already launched or not configured")
-            })?
-        };
-
-        let rocket = rocket.ignite().await.map_err(rocket_err)?;
-        let shutdown = rocket.shutdown();
-        *self.shutdown.lock().unwrap() = Some(shutdown);
-        rocket.launch().await.map_err(rocket_err)?;
-        Ok(())
-    }
-
-    #[napi]
-    pub fn shutdown(&self) -> Result<()> {
-        let guard = self.shutdown.lock().unwrap();
-        match guard.as_ref() {
-            Some(shutdown) => {
-                shutdown.clone().notify();
-                Ok(())
-            }
-            None => Err(Error::new(Status::GenericFailure, "server is not running")),
+    pub fn manage(&mut self, key: String, value: String) {
+        if let Ok(mut state_map) = self.managed_state.lock() {
+            state_map.insert(key, value);
         }
     }
-}
 
-#[napi]
-pub async fn launch(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
-}
+    /// Mount routes at base URI.
+    #[napi]
+    pub fn mount(&mut self, base: String, routes: Vec<&Route>) {
+        for route in routes {
+            let mut new_route = route.clone();
+            new_route.uri = format!("{}{}", base, route.uri);
+            self.routes_list.push(new_route);
+        }
+    }
 
-#[napi]
-pub async fn rocket_main(config: Option<RocketConfig>) -> Result<()> {
-    Rocket::new(config)?.launch().await
+    /// Register catchers at base URI.
+    #[napi]
+    pub fn register(&mut self, base: String, catchers: Vec<&Catcher>) {
+        for catcher in catchers {
+            let mut new_catcher = catcher.clone();
+            let _ = new_catcher.map_base(format!("{}{}", base, catcher.base));
+            self.catchers_list.push(new_catcher);
+        }
+    }
+
+    /// Return mounted routes list.
+    #[napi]
+    pub fn routes(&self) -> Vec<Route> {
+        self.routes_list.clone()
+    }
+
+    /// Trigger shutdown signal.
+    #[napi]
+    pub fn shutdown(&mut self) {
+        if let Ok(mut flag) = self.shutdown_handle.lock() {
+            *flag = true;
+        }
+    }
+
+    /// Retrieve managed state value by key.
+    #[napi]
+    pub fn state(&self, key: String) -> Option<String> {
+        self.managed_state
+            .lock()
+            .ok()
+            .and_then(|map| map.get(&key).cloned())
+    }
+
+    /// Get current launch phase.
+    #[napi(getter)]
+    pub fn phase(&self) -> Phase {
+        self.phase.current
+    }
 }

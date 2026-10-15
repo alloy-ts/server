@@ -4,6 +4,7 @@ pub mod codegen;
 pub mod config;
 pub mod fairing;
 pub mod handler;
+pub mod phase;
 pub mod rocket;
 pub mod route;
 pub mod route_uri;
