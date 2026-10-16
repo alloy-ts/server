@@ -1,6 +1,11 @@
-import { expect, test } from "vite-plus/test";
-import { main } from "./main.ts";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { serve, Config, Route, RouteUri, Handler } from "../index.js";
 
-test("main returns Hello, world!", () => {
-  expect(main()).toBe("Hello, world!");
+test("Main entrypoint imports", () => {
+  assert.equal(typeof serve, "function");
+  assert.equal(typeof Config, "function");
+  assert.equal(typeof Route, "function");
+  assert.equal(typeof RouteUri, "function");
+  assert.equal(typeof Handler, "function");
 });
